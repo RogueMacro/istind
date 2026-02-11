@@ -1,7 +1,13 @@
 [package]
-name = "mylang"
+name = "claks"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+apple-codesign = "0.29.0"
+ariadne = "0.6.0"
+bitflags = { version = "2.10.0" }
+bytemuck = { version = "1.24.0", features = ["derive"] }
 clap = { version = "4.5.54", features = ["derive"] }
+strum = { version = "0.27.2", features = ["derive"] }
+ux = "0.1.6"
