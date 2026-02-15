@@ -6,13 +6,11 @@ use strum::EnumIter;
 use ux::u12;
 
 use crate::{
-    ir::{
-        BasicBlock, VirtualReg,
-        lifetime::{Interval, Location},
-    },
+    ir::{BasicBlock, VirtualReg, lifetime::Interval},
     synthesize::arch::arm::{
         ArmAssembler,
         instr::{self, Input},
+        reg,
     },
 };
 
@@ -56,14 +54,24 @@ pub enum Register {
     SP = 31,  // stack pointer (X31) (not general purpose)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum RegisterGuard {
     Ready(Register),
     Load(u12, Register),
+    Save(u12, Register),
     SaveAndLoad(u12, Register),
 }
 
 impl RegisterGuard {
+    pub fn inner_reg(&self) -> Register {
+        match *self {
+            RegisterGuard::Ready(reg) => reg,
+            RegisterGuard::Load(_, reg) => reg,
+            RegisterGuard::Save(_, reg) => reg,
+            RegisterGuard::SaveAndLoad(_, reg) => reg,
+        }
+    }
+
     pub fn unwrap(&self, asm: &mut ArmAssembler) -> Register {
         match *self {
             Self::Ready(reg) => reg,
@@ -71,11 +79,15 @@ impl RegisterGuard {
                 asm.emit(instr::Load { stack_offset, dest });
                 dest
             }
+            Self::Save(stack_offset, dest) => {
+                asm.emit_store(stack_offset, dest);
+                dest
+            }
             Self::SaveAndLoad(stack_offset, dest) => {
                 asm.emit(instr::Store {
                     base: Reg::SP,
                     offset: Input::Imm(stack_offset),
-                    value: dest,
+                    register: dest,
                 });
 
                 asm.emit(instr::Load { stack_offset, dest });
@@ -85,115 +97,135 @@ impl RegisterGuard {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Location {
+    Register(Register),
+    Stack(u12),
+}
+
 pub fn allocate(bb: &BasicBlock) -> RegMap {
     let mut phys_regs = vec![Reg::X0, Reg::X1, Reg::X2, Reg::X3];
 
     let mut map: BTreeMap<VirtualReg, Location> = BTreeMap::new();
     let mut lifetimes = bb.lifetimes();
+    let lifetimes_imm = lifetimes.clone();
+
     let last_uses: Vec<(VirtualReg, usize)> = lifetimes
         .iter()
         .map(|(vreg, lifetime)| (*vreg, lifetime.end().unwrap() - 1))
         .collect();
 
     let mut stack = Vec::<bool>::new();
-    let mut stack_ptr = 0;
+    let mut stack_ptr = u12::new(0);
 
     let mut regmap = RegMap::new();
 
     for (op_idx, _) in bb.ops.iter().enumerate() {
-        let mut overlapping = Vec::new();
         for (&vreg, lifetime) in lifetimes.iter_mut() {
             if let Some(interval) = lifetime.at_mut(op_idx) {
-                if let Some(location) = interval.location {
-                    match location {
-                        Location::Register(r) => {
-                            regmap.insert(
-                                (vreg, op_idx),
-                                RegisterGuard::Ready(Register::from_u32(r).unwrap()),
-                            );
+                // This vreg overlaps (is active) at this op index
+                let reg_guard: RegisterGuard = match (interval.register, map.get(&vreg).copied()) {
+                    (Some(reg), _) => {
+                        // This interval has already been allocated.
+                        interval.register = Some(reg);
+                        RegisterGuard::Ready(Register::from_u32(reg).unwrap())
+                    }
+                    (None, Some(Location::Register(reg))) => {
+                        // This value already exists in a register from a previous allocation.
+                        interval.register = Some(reg as u32);
+                        RegisterGuard::Ready(reg)
+                    }
+
+                    (None, location) => {
+                        let location = location.map(|l| {
+                            let Location::Stack(offset) = l else {
+                                unreachable!()
+                            };
+                            offset
+                        });
+
+                        match (phys_regs.pop(), location) {
+                            (Some(reg), Some(offset)) => {
+                                interval.register = Some(reg as u32);
+                                RegisterGuard::Load(offset, reg)
+                            }
+                            (Some(reg), None) => {
+                                interval.register = Some(reg as u32);
+                                RegisterGuard::Ready(reg)
+                            }
+                            (None, location) => {
+                                // All physical registers busy, look for dead virtual registers before pushing
+                                // one onto the stack.
+
+                                let mut dead_vreg = None;
+
+                                for (vreg, loc) in map.iter() {
+                                    if let Location::Register(reg) = loc {
+                                        let (_, end) =
+                                            last_uses.iter().find(|(v, _)| v == vreg).unwrap();
+                                        if *end <= op_idx {
+                                            dead_vreg = Some((*vreg, *reg));
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                match (dead_vreg, location) {
+                                    (Some((dead_vreg, reg)), Some(offset)) => {
+                                        map.remove(&dead_vreg);
+                                        interval.register = Some(reg as u32);
+                                        RegisterGuard::Load(offset, reg)
+                                    }
+                                    (Some((dead_vreg, reg)), None) => {
+                                        map.remove(&dead_vreg);
+                                        interval.register = Some(reg as u32);
+                                        RegisterGuard::Ready(reg)
+                                    }
+                                    (None, location) => {
+                                        // All busy virtual registers are to be used in the future.
+                                        // Therefor we must save one register to the stack (preferrably the one to be
+                                        // used last) that is not currently overlapping.
+
+                                        let (&furthest_use_vreg, &reg, _) = map
+                                            .iter()
+                                            .filter_map(|(vreg, loc)| {
+                                                if let Location::Register(reg) = loc {
+                                                    let next_use = lifetimes_imm
+                                                        .get(vreg)
+                                                        .unwrap()
+                                                        .next_use_after(op_idx)
+                                                        .unwrap_or(usize::MAX);
+
+                                                    Some((vreg, reg, next_use))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .max_by_key(|(_, _, next_use)| *next_use)
+                                            .unwrap();
+
+                                        map.remove(&furthest_use_vreg);
+                                        interval.register = Some(reg as u32);
+
+                                        let reg_guard = if let Some(offset) = location {
+                                            RegisterGuard::SaveAndLoad(stack_ptr, reg)
+                                        } else {
+                                            RegisterGuard::Save(stack_ptr, reg)
+                                        };
+
+                                        stack_ptr = stack_ptr + u12::new(1);
+
+                                        reg_guard
+                                    }
+                                }
+                            }
                         }
-                        Location::Stack(offset) => {
-                            panic!("why are we here?");
-                        }
                     }
-                } else if let Some(Location::Register(preg)) = map.get(&vreg) {
-                    regmap.insert(
-                        (vreg, op_idx),
-                        RegisterGuard::Ready(Register::from_u32(*preg).unwrap()),
-                    );
+                };
 
-                    interval.location = Some(Location::Register(*preg));
-                } else {
-                    overlapping.push(vreg);
-                }
+                map.insert(vreg, Location::Register(reg_guard.inner_reg()));
+                regmap.insert((vreg, op_idx), reg_guard);
             }
-        }
-
-        for vreg in overlapping.iter() {
-            let acquired_preg;
-
-            if let Some(preg) = phys_regs.pop() {
-                acquired_preg = preg;
-            } else {
-                // All physical registers busy, look for dead virtual registers before pushing
-                // one onto the stack.
-
-                let mut swap_vreg = None;
-                for vreg in map.keys() {
-                    let (_, end) = last_uses.iter().find(|(v, _)| v == vreg).unwrap();
-                    if *end <= op_idx {
-                        swap_vreg = Some(*vreg);
-                        break;
-                    }
-                }
-
-                if let Some(dead) = swap_vreg {
-                    let location = map.remove(&dead).unwrap();
-                    match location {
-                        Location::Register(preg) => acquired_preg = preg,
-                        Location::Stack(offset) => {}
-                    }
-                    acquired_preg = preg;
-                } else {
-                    // All busy virtual registers are to be used in the future.
-                    // Therefor we must save one register to the stack (preferrably the one to be
-                    // used last) that is not currently overlapping.
-
-                    let (furthest_use_vreg, next_use) = map
-                        .keys()
-                        .map(|vreg| {
-                            lifetimes
-                                .get(vreg)
-                                .unwrap()
-                                .next_use_after(op_idx)
-                                .map(|next_use| (*vreg, next_use))
-                                .unwrap_or((*vreg, usize::MAX))
-                        })
-                        .max_by_key(|(_, nu)| *nu)
-                        .unwrap();
-
-                    let preg = map.remove(&furthest_use_vreg).unwrap();
-
-                    let stack_interval = Interval {
-                        range: op_idx..(op_idx + 1),
-                        location: Some(Location::Stack(stack_ptr)),
-                    };
-
-                    lifetimes
-                        .get_mut(&furthest_use_vreg)
-                        .unwrap()
-                        .insert_interval(stack_interval);
-
-                    acquired_preg = preg;
-                    stack_ptr += 8;
-                }
-            }
-
-            map.insert(*vreg, acquired_preg);
-            lifetimes
-                .get_mut(vreg)
-                .unwrap()
-                .set_location(op_idx, Some(Location::Register(acquired_preg as u32)));
         }
     }
 
@@ -205,5 +237,5 @@ pub fn allocate(bb: &BasicBlock) -> RegMap {
     println!("Lifetimes ({}):", lifetimes.len());
     crate::ir::lifetime::print_lifetimes(&lifetimes);
 
-    RegMap::new()
+    regmap
 }

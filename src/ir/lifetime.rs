@@ -4,16 +4,10 @@ use colored::{Color, Colorize};
 
 use crate::ir::VirtualReg;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Location {
-    Register(u32),
-    Stack(u32),
-}
-
 #[derive(Debug, Clone)]
 pub struct Interval {
     pub range: Range<usize>,
-    pub location: Option<Location>,
+    pub register: Option<u32>,
 }
 
 #[derive(Default, Clone)]
@@ -41,10 +35,10 @@ impl Lifetime {
             .find(|i| i.range.contains(&position))
     }
 
-    pub fn set_location(&mut self, position: usize, location: Option<Location>) {
+    pub fn set_register(&mut self, position: usize, location: Option<u32>) {
         for interval in self.intervals.iter_mut() {
             if interval.range.contains(&position) {
-                interval.location = location;
+                interval.register = location;
             }
         }
     }
@@ -52,13 +46,7 @@ impl Lifetime {
     pub fn next_use_after(&self, op_idx: usize) -> Option<usize> {
         self.intervals
             .iter()
-            .filter_map(|i| {
-                if !matches!(i.location, Some(Location::Stack(_))) {
-                    Some(i.range.start)
-                } else {
-                    None
-                }
-            })
+            .map(|i| i.range.start)
             .find(|s| *s > op_idx)
     }
 
@@ -102,6 +90,7 @@ pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
         Color::Red,
         Color::Yellow,
         Color::Magenta,
+        Color::Cyan,
     ];
     print!("{}", "Stack".cyan());
     for (i, c) in reg_colors.iter().enumerate() {
@@ -127,10 +116,6 @@ pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
 
         let mut prev_end = 0;
         for interval in &l.intervals {
-            // println!(
-            //     "{} -> prev_end: {}, start: {} (loc: {:?}",
-            //     vreg, prev_end, interval.range.start, interval.location
-            // );
             let fill = interval.range.start - prev_end;
             if fill > 0 {
                 if prev_end == 0 {
@@ -138,16 +123,10 @@ pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
                 } else {
                     print!("{:width$}", "", width = fill * 2 + 1);
                 }
-            } else {
-                // print!(" ");
             }
 
-            let color = if let Some(l) = interval.location {
-                if let Location::Register(r) = l {
-                    reg_colors[r as usize]
-                } else {
-                    Color::Cyan
-                }
+            let color = if let Some(r) = interval.register {
+                reg_colors[r as usize]
             } else {
                 Color::BrightBlack
             };

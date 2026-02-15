@@ -1,16 +1,16 @@
-use std::{path::Path, rc::Rc};
+use std::{marker::PhantomData, path::Path, rc::Rc};
 
 use ariadne::Source;
 
 use crate::{
     analyze::{Error, ast::parse::Parser, lex::Lexer},
-    ir::{IR, Item, lifetime},
+    ir::{IR, Item, VirtualReg, lifetime},
     synthesize::{
         arch::{
             Assemble, MachineCode,
             arm::{self, ArmAssembler},
         },
-        exe::{Executable, mac::AppleExecutable},
+        exe::Executable,
     },
 };
 
@@ -19,13 +19,11 @@ pub mod ir;
 pub mod synthesize;
 
 #[derive(Default)]
-pub struct Compiler;
+pub struct Compiler<E: Executable> {
+    _marker: PhantomData<E>,
+}
 
-impl Compiler {
-    pub fn new() -> Self {
-        Self
-    }
-
+impl<E: Executable> Compiler<E> {
     pub fn compile(&self, path: impl AsRef<Path>, out_path: impl AsRef<Path>) -> Result<(), ()> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).unwrap();
@@ -44,8 +42,9 @@ impl Compiler {
             }
         };
 
-        let exe = AppleExecutable::new(code, String::from("com.claks.compiled")); // [0xd2800800, 0xd2800030, 0xd4001001]
-        exe.build(out_path);
+        E::default()
+            .with_binary_identifier(String::from("com.claks.compiled"))
+            .build(code, out_path);
 
         Ok(())
     }
@@ -65,13 +64,20 @@ impl Compiler {
             let Item::Function { name, bb } = item;
 
             let regmap = arm::reg::allocate(bb);
-            println!("RegMap: {:#?}", regmap);
+            let mut entries: Vec<_> = regmap
+                .iter()
+                .map(|((vreg, idx), guard)| ((*vreg, *idx), *guard))
+                .collect();
+
+            entries.sort_by_key(|((_, i), _)| *i);
+            for ((vreg, idx), guard) in entries {
+                println!("Idx({}): {} -> {:?}", idx, vreg, guard);
+            }
+
+            println!("{:?}", regmap.get(&(VirtualReg(0), 0)));
         }
 
-        panic!();
-
-        let mut asm = ArmAssembler::new();
-        let code = asm.assemble(ir);
+        let code = ArmAssembler::assemble(ir);
 
         Ok(code)
     }

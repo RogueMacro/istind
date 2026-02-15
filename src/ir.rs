@@ -44,7 +44,7 @@ impl BasicBlock {
             for vreg in &uses {
                 let interval = Interval {
                     range: i..(i + 1),
-                    location: None,
+                    register: None,
                 };
 
                 active.push((*vreg, interval));

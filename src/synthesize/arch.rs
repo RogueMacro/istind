@@ -18,5 +18,5 @@ impl MachineCode {
 }
 
 pub trait Assemble {
-    fn assemble(self, ir: IR) -> MachineCode;
+    fn assemble(ir: IR) -> MachineCode;
 }

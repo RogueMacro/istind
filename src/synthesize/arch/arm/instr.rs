@@ -29,28 +29,11 @@ pub enum Input<I> {
     Imm(I),
 }
 
-pub fn add_imm(src_reg: Register, imm: i12, dest_reg: Register) -> u32 {
-    let shift12 = 0;
-    let imm = to_u32(imm);
-    let src = src_reg as u32;
-    let dest = dest_reg as u32;
-
-    (0b100100010 << 23) & (shift12 << 22) & (imm << 10) & (src << 5) & dest
-}
-
-pub fn add_reg(reg_a: Register, reg_b: Register, dest_reg: Register) -> u32 {
-    let a = reg_a as u32;
-    let b = reg_b as u32;
-    let dest = dest_reg as u32;
-
-    (0b10001011 << 24) | (a << 16) | (b << 5) | dest
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Add {
-    a: Register,
-    b: Input<i12>,
-    dest: Register,
+    pub a: Register,
+    pub b: Input<i12>,
+    pub dest: Register,
 }
 
 impl Instruction for Add {
@@ -157,7 +140,7 @@ impl Instruction for MovReg {
 pub struct Movz {
     pub shift: ImmShift,
     pub imm_value: u16,
-    pub dest_reg: Register,
+    pub dest: Register,
 }
 
 impl Instruction for Movz {
@@ -165,7 +148,7 @@ impl Instruction for Movz {
         (0b110100101 << 23)
             | ((self.shift as u32) << 21)
             | ((self.imm_value as u32) << 5)
-            | self.dest_reg as u32
+            | self.dest as u32
     }
 }
 
@@ -210,23 +193,25 @@ impl Instruction for Ret {
 #[derive(Debug, Clone, Copy)]
 pub struct Store {
     pub base: Register,
+
+    /// Multiple of 8 bytes.
     pub offset: Input<u12>,
-    pub value: Register,
+
+    pub register: Register,
 }
 
 impl Instruction for Store {
     fn encode(&self) -> u32 {
         let base = self.base as u32;
-        let value = self.value as u32;
+        let register = self.register as u32;
 
         match self.offset {
             Input::Reg(reg) => {
-                (0b11111000001_00000_111010 << 10) | ((reg as u32) << 16) | (base << 5) | value
+                (0b11111000001_00000_111010 << 10) | ((reg as u32) << 16) | (base << 5) | register
             }
             Input::Imm(imm) => {
                 let imm: u32 = imm.into();
-                let imm = imm / 8;
-                (0b1111100100 << 22) | (imm << 10) | (base << 5) | value
+                (0b1111100100 << 22) | (imm << 10) | (base << 5) | register
             }
         }
     }
