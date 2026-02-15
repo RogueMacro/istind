@@ -4,9 +4,12 @@ use ariadne::Source;
 
 use crate::{
     analyze::{Error, ast::parse::Parser, lex::Lexer},
-    ir::IR,
+    ir::{IR, Item, lifetime},
     synthesize::{
-        arch::{Assemble, MachineCode, arm::ArmAssembler},
+        arch::{
+            Assemble, MachineCode,
+            arm::{self, ArmAssembler},
+        },
         exe::{Executable, mac::AppleExecutable},
     },
 };
@@ -54,9 +57,18 @@ impl Compiler {
 
         println!("{:#?}", ast);
 
-        let ir = IR::generate(ast);
+        let mut ir = IR::generate(ast);
 
-        println!("{:#?}", ir);
+        println!("{}", ir);
+
+        for item in ir.items.iter_mut() {
+            let Item::Function { name, bb } = item;
+
+            let regmap = arm::reg::allocate(bb);
+            println!("RegMap: {:#?}", regmap);
+        }
+
+        panic!();
 
         let mut asm = ArmAssembler::new();
         let code = asm.assemble(ir);

@@ -1,9 +1,7 @@
 use std::{ops::Range, rc::Rc};
 
-use ariadne::{ColorGenerator, Label, Report, ReportBuilder, ReportKind};
-
 use crate::analyze::{
-    Error, ErrorCode, ErrorContext, Span,
+    Error, ErrorCode, ErrorContext,
     ast::{AST, Expression, Item, Statement},
     lex::{
         Lexer,
@@ -107,7 +105,7 @@ impl Parser {
 
         match keyword {
             Keyword::Return => self.parse_return(),
-            Keyword::Let => self.parse_assignment(),
+            Keyword::Let => self.parse_declaration(),
             _ => Err(self.err_ctx.unexpected_token(range, "unexpected keyword")),
         }
     }
@@ -119,7 +117,7 @@ impl Parser {
         Ok(Statement::Return(expr))
     }
 
-    fn parse_assignment(&mut self) -> Result<Statement, Error> {
+    fn parse_declaration(&mut self) -> Result<Statement, Error> {
         let (token, range) = self.take_next()?;
         let Token::Ident(var) = token else {
             return Err(self

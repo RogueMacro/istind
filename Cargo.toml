@@ -9,5 +9,8 @@ ariadne = "0.6.0"
 bitflags = { version = "2.10.0" }
 bytemuck = { version = "1.24.0", features = ["derive"] }
 clap = { version = "4.5.54", features = ["derive"] }
+colored = "3.1.1"
+num-derive = "0.4.2"
+num-traits = "0.2.19"
 strum = { version = "0.27.2", features = ["derive"] }
 ux = "0.1.6"

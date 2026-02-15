@@ -1,6 +1,10 @@
 fn main() {
     let a = 64;
     let b = 36;
-    return a + b + 14;
+    let c = 12;
+    let d = 13;
+    let e = 25;
+    let f = 26;
+    return e + f + d + c + a + 23 + b + 14;
 }
 

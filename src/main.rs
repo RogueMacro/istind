@@ -1,6 +1,9 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, default, path::PathBuf};
 
-use claks::Compiler;
+use claks::{
+    Compiler,
+    ir::lifetime::{self, Interval, Lifetime},
+};
 use clap::Parser;
 
 #[derive(Parser)]

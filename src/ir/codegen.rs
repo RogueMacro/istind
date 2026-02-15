@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     analyze::ast::{AST, Expression, Item as AstItem, Statement},
-    ir::{BasicBlock, DestVal, IR, Item, Lifetime, Op, SourceVal, StackOffset},
+    ir::{BasicBlock, IR, Item, Op, SourceVal, VirtualReg},
 };
 
 impl IR {
@@ -25,21 +25,17 @@ impl IR {
 }
 
 struct BlockBuilder {
-    stack: HashMap<String, StackOffset>,
-    stack_size: u32,
+    vregs: HashMap<String, VirtualReg>,
+    vreg_counter: u32,
     ops: Vec<Op>,
-    lifetimes: HashMap<u32, Lifetime>,
-    tmp_var_counter: u32,
 }
 
 impl BlockBuilder {
     pub fn new() -> Self {
         Self {
-            stack: HashMap::new(),
-            stack_size: 0,
+            vregs: HashMap::new(),
+            vreg_counter: 0,
             ops: Vec::new(),
-            lifetimes: HashMap::new(),
-            tmp_var_counter: 0,
         }
     }
 
@@ -49,54 +45,53 @@ impl BlockBuilder {
         for stmt in block {
             match stmt {
                 Statement::Declare { var, expr } => {
-                    let stack_offset = self.get_or_insert_stack(&var);
+                    if self.vregs.contains_key(&var) {
+                        panic!("variable declared twice");
+                    }
 
-                    let value = self.unroll_expr(&expr);
-                    self.ops.push(Op::Store {
-                        stack_offset,
-                        value,
-                    });
+                    let dest = self.get_or_insert_vreg(var);
+                    let src = self.unroll_expr(&expr, Some(dest));
+                    self.ops.push(Op::Assign { src, dest });
                 }
                 Statement::Return(expr) => {
-                    let value = self.unroll_expr(&expr);
+                    let value = self.unroll_expr(&expr, None);
                     self.ops.push(Op::Return { value });
                 }
             }
         }
 
-        BasicBlock {
-            stack_size: self.stack_size,
-            ops: self.ops,
-            lifetimes: self.lifetimes,
-        }
+        BasicBlock { ops: self.ops }
     }
 
-    fn unroll_expr(&mut self, expr: &Expression) -> SourceVal {
+    fn unroll_expr(&mut self, expr: &Expression, dest: Option<VirtualReg>) -> SourceVal {
         match expr {
             Expression::Const(num) => SourceVal::Immediate(*num),
-            Expression::Var(var) => SourceVal::Stack(self.get_or_insert_stack(var)),
+            Expression::Var(var) => SourceVal::VReg(self.get_or_insert_vreg(var)),
             Expression::Addition(expr1, expr2) => {
-                let a = self.unroll_expr(expr1.as_ref());
-                let b = self.unroll_expr(expr2.as_ref());
+                let a = self.unroll_expr(expr1.as_ref(), None);
+                let b = self.unroll_expr(expr2.as_ref(), None);
 
-                let tmp = self.tmp_var_counter;
-                self.tmp_var_counter += 1;
-                self.ops.push(Op::Add {
-                    a,
-                    b,
-                    dest: DestVal::Temporary(tmp),
-                });
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+                self.ops.push(Op::Add { a, b, dest });
 
-                SourceVal::Temporary(tmp)
+                SourceVal::VReg(dest)
             }
         }
     }
 
-    fn get_or_insert_stack(&mut self, var: &str) -> StackOffset {
-        self.stack.get(var).copied().unwrap_or_else(|| {
-            self.stack.insert(var.to_owned(), self.stack_size);
-            self.stack_size += 8; // TODO: var size
-            self.stack_size - 8
-        })
+    fn get_or_insert_vreg<S: Into<String> + AsRef<str>>(&mut self, var: S) -> VirtualReg {
+        if let Some(&vreg) = self.vregs.get(var.as_ref()) {
+            vreg
+        } else {
+            let vreg = self.get_vreg();
+            self.vregs.insert(var.into(), vreg);
+            vreg
+        }
+    }
+
+    fn get_vreg(&mut self) -> VirtualReg {
+        let vreg = VirtualReg(self.vreg_counter);
+        self.vreg_counter += 1;
+        vreg
     }
 }
