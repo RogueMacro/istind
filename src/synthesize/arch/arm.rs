@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use strum::IntoEnumIterator;
 use ux::{i12, i26, u12};
 
 use crate::{
@@ -24,6 +23,7 @@ pub struct ArmAssembler {
     code: MachineCode,
     functions: HashMap<String, u64>,
     regmap: Option<RegMap>,
+    stacks: Vec<i12>,
 }
 
 impl Assemble for ArmAssembler {
@@ -83,13 +83,63 @@ impl ArmAssembler {
         println!("Assembling function {}", name);
         self.functions.insert(name, self.current_offset());
 
-        self.regmap = Some(reg::allocate(&bb));
+        let (regmap, stack_size) = reg::allocate(&bb);
+        self.regmap = Some(regmap);
+
+        let mut entries: Vec<_> = self
+            .regmap
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|((vreg, idx), guard)| ((*vreg, *idx), *guard))
+            .collect();
+
+        entries.sort_by_key(|((_, i), _)| *i);
+        for ((vreg, idx), guard) in entries {
+            println!("Idx({}): {} -> {:?}", idx, vreg, guard);
+        }
+
+        self.begin_stack(stack_size);
 
         for (idx, op) in bb.ops.iter().copied().enumerate() {
             self.asm_op(op, idx);
         }
 
         self.regmap = None;
+    }
+
+    fn begin_stack(&mut self, stack_size: u12) {
+        if stack_size != u12::new(0) {
+            let mut stack_size: u16 = stack_size.into();
+            // align to 16 bytes
+            if !stack_size.is_multiple_of(2) {
+                stack_size += 1;
+            }
+
+            let stack_size = stack_size as i16;
+            let stack_size = i12::new(stack_size * 8);
+
+            println!("pushing stack: {}", stack_size);
+            self.stacks.push(stack_size);
+
+            self.emit(instr::Sub {
+                imm: stack_size,
+                src: Reg::SP,
+                dest: Reg::SP,
+            });
+        }
+    }
+
+    fn end_stack(&mut self) {
+        if let Some(stack_size) = self.stacks.pop()
+            && stack_size != i12::new(0)
+        {
+            self.emit(instr::Add {
+                a: Reg::SP,
+                b: instr::Input::Imm(stack_size),
+                dest: Reg::SP,
+            });
+        }
     }
 
     fn asm_op(&mut self, op: Operation, idx: usize) {
@@ -143,6 +193,7 @@ impl ArmAssembler {
             }
         }
 
+        self.end_stack();
         self.emit(instr::Ret);
     }
 

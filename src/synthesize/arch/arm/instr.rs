@@ -217,6 +217,36 @@ impl Instruction for Store {
     }
 }
 
+/// SUB instruction.
+///
+/// Subtracts immediate value from register.
+/// Rd = Rn - imm12
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  1  0  1  0  0  0  1  0  sh imm12                               Rn             Rd
+///
+/// - sh: 0: no shift, 1: shift left by 12 bits
+/// - imm12: immediate value
+/// - Rn: source register
+/// - Rd: destination register
+#[derive(Debug, Clone, Copy)]
+pub struct Sub {
+    pub imm: i12,
+    pub src: Register,
+    pub dest: Register,
+}
+
+impl Instruction for Sub {
+    fn encode(&self) -> u32 {
+        let imm: i16 = self.imm.into();
+        let src = self.src as u32;
+        let dest = self.dest as u32;
+
+        (0b110100010_0 << 22) | ((imm as u32) << 10) | (src << 5) | dest
+    }
+}
+
 /// SVC instruction.
 ///
 /// Supervisor call. 0x80 counts as a valid immediate value. Call number should be stored in X16.

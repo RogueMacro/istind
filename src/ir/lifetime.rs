@@ -10,13 +10,17 @@ pub struct Interval {
     pub register: Option<u32>,
 }
 
+/// The lifetime of a single variable/assignment.
 #[derive(Default, Clone)]
 pub struct Lifetime {
-    /// During construction is ensured to be in chronological order.
-    pub intervals: Vec<Interval>,
+    intervals: Vec<Interval>,
 }
 
 impl Lifetime {
+    pub fn intervals(&self) -> &[Interval] {
+        &self.intervals
+    }
+
     pub fn start(&self) -> Option<usize> {
         self.intervals.iter().map(|i| i.range.start).min()
     }
@@ -50,6 +54,7 @@ impl Lifetime {
             .find(|s| *s > op_idx)
     }
 
+    /// Inserts the interval such that the vec keeps chronological order.
     pub fn insert_interval(&mut self, interval: Interval) {
         let insert_at = self
             .intervals
@@ -71,6 +76,7 @@ impl Lifetime {
     }
 }
 
+/// Prints a very simple debug version of a lifetime register with limited information.
 pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
     let end = lifetimes
         .values()
@@ -126,7 +132,7 @@ pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
             }
 
             let color = if let Some(r) = interval.register {
-                reg_colors[r as usize]
+                reg_colors[r as usize % reg_colors.len()]
             } else {
                 Color::BrightBlack
             };

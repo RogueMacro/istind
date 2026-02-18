@@ -60,23 +60,6 @@ impl<E: Executable> Compiler<E> {
 
         println!("{}", ir);
 
-        for item in ir.items.iter_mut() {
-            let Item::Function { name, bb } = item;
-
-            let regmap = arm::reg::allocate(bb);
-            let mut entries: Vec<_> = regmap
-                .iter()
-                .map(|((vreg, idx), guard)| ((*vreg, *idx), *guard))
-                .collect();
-
-            entries.sort_by_key(|((_, i), _)| *i);
-            for ((vreg, idx), guard) in entries {
-                println!("Idx({}): {} -> {:?}", idx, vreg, guard);
-            }
-
-            println!("{:?}", regmap.get(&(VirtualReg(0), 0)));
-        }
-
         let code = ArmAssembler::assemble(ir);
 
         Ok(code)

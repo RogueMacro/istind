@@ -34,7 +34,7 @@ impl BasicBlock {
                     true
                 } else {
                     let lifetime = lifetimes.entry(*vreg).or_default();
-                    lifetime.intervals.push(interval.clone());
+                    lifetime.insert_interval(interval.clone());
 
                     false
                 }
@@ -53,7 +53,7 @@ impl BasicBlock {
 
         for (vreg, interval) in active {
             let lifetime = lifetimes.entry(vreg).or_default();
-            lifetime.intervals.push(interval.clone());
+            lifetime.insert_interval(interval.clone());
         }
 
         lifetimes
@@ -81,7 +81,9 @@ pub enum Operation {
 impl Operation {
     pub fn var_uses(&self, out: &mut Vec<VirtualReg>) {
         let mut push = |vreg: Option<VirtualReg>| {
-            if let Some(vreg) = vreg {
+            if let Some(vreg) = vreg
+                && !out.contains(&vreg)
+            {
                 out.push(vreg);
             }
         };

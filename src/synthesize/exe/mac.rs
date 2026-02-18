@@ -21,22 +21,13 @@ use super::{
 
 mod mach_o;
 
+#[derive(Default)]
 pub struct AppleExecutable {
-    code: MachineCode,
-    binary_identifier: String,
-}
-
-impl AppleExecutable {
-    pub fn new(code: MachineCode, binary_identifier: String) -> Self {
-        Self {
-            code,
-            binary_identifier,
-        }
-    }
+    binary_identifier: Option<String>,
 }
 
 impl Executable for AppleExecutable {
-    fn build(&self, out_path: impl AsRef<Path>) {
+    fn build(&self, code: MachineCode, out_path: impl AsRef<Path>) {
         // Mach-O file:
         // Header
         // LC_SEGMENT (__PAGEZERO)
@@ -54,7 +45,7 @@ impl Executable for AppleExecutable {
         let MachineCode {
             instructions,
             entry_point_offset,
-        } = &self.code;
+        } = code;
 
         let pagezero_segment = SegmentCommand {
             command: LoadCommand::Segment,
@@ -103,7 +94,7 @@ impl Executable for AppleExecutable {
         let mut entry_point = EntryPointCommand {
             command: LoadCommand::EntryPoint,
             command_size: size_of::<EntryPointCommand>() as u32,
-            main_offset: *entry_point_offset,
+            main_offset: entry_point_offset,
             stack_size: 0,
         };
 
@@ -246,12 +237,22 @@ impl Executable for AppleExecutable {
 
         let signer = MachOSigner::new(&vec).unwrap();
         let mut sign_settings = SigningSettings::default();
-        sign_settings.set_binary_identifier(SettingsScope::Main, &self.binary_identifier);
+        sign_settings.set_binary_identifier(
+            SettingsScope::Main,
+            self.binary_identifier
+                .as_ref()
+                .expect("apple executables require a binary identifier"),
+        );
         signer
             .write_signed_binary(&sign_settings, &mut file)
             .unwrap();
 
         std::fs::set_permissions(out_path, Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn with_binary_identifier(mut self, ident: String) -> Self {
+        self.binary_identifier = Some(ident);
+        self
     }
 }
 

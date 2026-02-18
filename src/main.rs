@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use claks::{Compiler, synthesize::exe::DummyExecutable};
+use claks::{Compiler, synthesize::exe::mac::AppleExecutable};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -14,16 +14,16 @@ struct Cli {
 fn main() {
     // let args = Cli::parse();
 
-    let compiler = Compiler::<DummyExecutable>::default();
+    let compiler = Compiler::<AppleExecutable>::default();
     if compiler.compile("main.lk", "main").is_err() {
         return;
     }
 
-    // println!("Executable built and written to ./main");
+    println!("Executable built and written to ./main");
 
-    // let exit_code = std::process::Command::new("otool")
-    //     .arg("-vt")
-    //     .arg("main")
-    //     .status()
-    //     .expect("program failed");
+    let exit_code = std::process::Command::new("otool")
+        .arg("-vt")
+        .arg("main")
+        .status()
+        .expect("program failed");
 }
