@@ -26,9 +26,10 @@ pub struct Header {
 #[repr(u32)]
 #[derive(NoUninit, Copy, Clone)]
 pub enum Magic {
-    // 32-bit architecture
-    X32 = 0xfeedface,
-    // 64-bit architecture
+    /// 32-bit architecture
+    // X32 = 0xfeedface,
+
+    /// 64-bit architecture
     X64 = 0xfeedfacf,
 }
 

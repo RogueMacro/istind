@@ -1,18 +1,17 @@
 use std::{
     fmt::Display,
-    ops::{Deref, Range, RangeBounds},
+    ops::{Deref, Range},
     rc::Rc,
 };
 
 use ariadne::{ColorGenerator, Label, Report, ReportBuilder, ReportKind};
-
-use crate::analyze::lex::token::Token;
 
 pub mod ast;
 pub mod lex;
 
 pub type Span = (Rc<String>, Range<usize>);
 
+#[derive(Debug)]
 pub struct Error(Box<Report<'static, Span>>);
 
 impl Error {

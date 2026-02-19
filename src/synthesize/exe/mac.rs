@@ -2,6 +2,7 @@ use std::{
     fs::{File, Permissions},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
+    process::ExitStatus,
 };
 
 use apple_codesign::{MachOSigner, SettingsScope, SigningSettings};
@@ -254,19 +255,19 @@ impl Executable for AppleExecutable {
         self.path = Some(out_path.to_owned());
     }
 
-    fn with_binary_identifier(mut self, ident: String) -> Self {
-        self.binary_identifier = Some(ident);
+    fn with_binary_identifier(mut self, ident: impl AsRef<str>) -> Self {
+        self.binary_identifier = Some(format!("com.{}", ident.as_ref()));
         self
     }
 
-    fn run(&self) -> Result<(), ExecutableError> {
+    fn run(&self) -> Result<ExitStatus, ExecutableError> {
         let Some(path) = self.path.as_ref() else {
             return Err(ExecutableError::NoBuildPath);
         };
 
-        let _exit_code = std::process::Command::new(path).status()?;
+        let exit_status = std::process::Command::new(path).status()?;
 
-        Ok(())
+        Ok(exit_status)
     }
 }
 

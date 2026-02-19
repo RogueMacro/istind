@@ -26,14 +26,14 @@ fn main() -> Result<(), Error> {
     }
 
     println!(
-        "{:>12} module {}",
+        "{:>12} {}",
         "Compiled".bright_green(),
         module.to_string_lossy()
     );
 
-    let exit_code = std::process::Command::new("otool")
+    std::process::Command::new("otool")
         .arg("-vt")
-        .arg("main")
+        .arg("ctarget/main")
         .status()
         .expect("program failed");
 

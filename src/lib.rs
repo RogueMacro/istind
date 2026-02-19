@@ -34,19 +34,19 @@ impl<E: Executable> Compiler<E> {
         let code = match self.compile_source(source_name.clone(), &source) {
             Ok(code) => code,
             Err(e) => {
-                e.eprint((source_name, Source::from(source)));
+                e.eprint((source_name, Source::from(source))).unwrap();
                 return Err(());
             }
         };
 
         E::default()
-            .with_binary_identifier(String::from("com.claks.compiled"))
+            .with_binary_identifier(source_name.as_ref())
             .build(code, out_path);
 
         Ok(())
     }
 
-    fn compile_source(&self, name: Rc<String>, source: &str) -> Result<MachineCode, Error> {
+    pub fn compile_source(&self, name: Rc<String>, source: &str) -> Result<MachineCode, Error> {
         let lexer = Lexer::new(name.clone(), source)?;
         let parser = Parser::new(name, lexer);
         let ast = parser.into_ast()?;

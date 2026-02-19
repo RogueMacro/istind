@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, process::ExitStatus};
 
 use crate::synthesize::arch::MachineCode;
 
@@ -6,25 +6,25 @@ use crate::synthesize::arch::MachineCode;
 pub mod mac;
 
 pub trait Executable: Default {
-    fn with_binary_identifier(self, ident: String) -> Self;
+    fn with_binary_identifier(self, ident: impl AsRef<str>) -> Self;
 
     fn build(&mut self, code: MachineCode, out_path: impl AsRef<Path>);
 
-    fn run(&self) -> Result<(), ExecutableError>;
+    fn run(&self) -> Result<ExitStatus, ExecutableError>;
 }
 
 #[derive(Default)]
 pub struct DummyExecutable;
 
 impl Executable for DummyExecutable {
-    fn with_binary_identifier(self, _ident: String) -> Self {
+    fn with_binary_identifier(self, _ident: impl AsRef<str>) -> Self {
         self
     }
 
     fn build(&mut self, _code: MachineCode, _out_path: impl AsRef<Path>) {}
 
-    fn run(&self) -> Result<(), ExecutableError> {
-        Ok(())
+    fn run(&self) -> Result<ExitStatus, ExecutableError> {
+        Err(ExecutableError::Dummy)
     }
 }
 
@@ -34,4 +34,6 @@ pub enum ExecutableError {
     NoBuildPath,
     #[error("failed to run executable")]
     Io(#[from] std::io::Error),
+    #[error("you cannot run a dummy executable")]
+    Dummy,
 }

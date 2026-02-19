@@ -77,8 +77,9 @@ impl Lifetime {
 
             self.intervals.insert(insert_at, interval);
         } else {
-            let last = self.intervals.last().unwrap().range.end;
-            assert!(last <= interval.range.start);
+            if let Some(last) = self.intervals.last() {
+                assert!(last.range.end <= interval.range.start);
+            }
 
             self.intervals.push(interval);
         }

@@ -16,7 +16,7 @@ use crate::{
 pub mod instr;
 pub mod reg;
 
-const MAX_EXIT_CODE: u16 = 255; // On UNIX
+// const MAX_EXIT_CODE: u16 = 255; // On UNIX
 
 #[derive(Default)]
 pub struct ArmAssembler {
