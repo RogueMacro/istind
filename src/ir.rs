@@ -18,6 +18,7 @@ pub struct BasicBlock {
 }
 
 impl BasicBlock {
+    /// Generates a registry mapping virtual registers to a lifetime.
     pub fn lifetimes(&self) -> HashMap<VirtualReg, Lifetime> {
         let mut lifetimes: HashMap<VirtualReg, Lifetime> = HashMap::new();
         let mut active: Vec<(VirtualReg, Interval)> = Vec::new();
@@ -25,7 +26,7 @@ impl BasicBlock {
 
         for (i, op) in self.ops.iter().enumerate() {
             uses.clear();
-            op.var_uses(&mut uses);
+            op.vregs_used(&mut uses);
 
             active.retain_mut(|(vreg, interval)| {
                 if let Some(u) = uses.iter().position(|r| r == vreg) {
@@ -79,7 +80,8 @@ pub enum Operation {
 }
 
 impl Operation {
-    pub fn var_uses(&self, out: &mut Vec<VirtualReg>) {
+    /// Gets the virtual registers used in this operation. Both source and destination registers.
+    pub fn vregs_used(&self, out: &mut Vec<VirtualReg>) {
         let mut push = |vreg: Option<VirtualReg>| {
             if let Some(vreg) = vreg
                 && !out.contains(&vreg)
@@ -103,6 +105,8 @@ impl Operation {
     }
 }
 
+/// A value that can be used in an operation as a source, either an immediate operand or a
+/// register.
 #[derive(Clone, Copy)]
 pub enum SourceVal {
     Immediate(i64),
@@ -110,6 +114,7 @@ pub enum SourceVal {
 }
 
 impl SourceVal {
+    /// Returns the virtual register if the source value is a register.
     pub fn reg(&self) -> Option<VirtualReg> {
         match self {
             Self::VReg(vreg) => Some(*vreg),

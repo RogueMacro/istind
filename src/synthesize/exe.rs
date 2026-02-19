@@ -8,7 +8,9 @@ pub mod mac;
 pub trait Executable: Default {
     fn with_binary_identifier(self, ident: String) -> Self;
 
-    fn build(&self, code: MachineCode, out_path: impl AsRef<Path>);
+    fn build(&mut self, code: MachineCode, out_path: impl AsRef<Path>);
+
+    fn run(&self) -> Result<(), ExecutableError>;
 }
 
 #[derive(Default)]
@@ -19,5 +21,17 @@ impl Executable for DummyExecutable {
         self
     }
 
-    fn build(&self, _code: MachineCode, _out_path: impl AsRef<Path>) {}
+    fn build(&mut self, _code: MachineCode, _out_path: impl AsRef<Path>) {}
+
+    fn run(&self) -> Result<(), ExecutableError> {
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExecutableError {
+    #[error("executable was not built before running")]
+    NoBuildPath,
+    #[error("failed to run executable")]
+    Io(#[from] std::io::Error),
 }

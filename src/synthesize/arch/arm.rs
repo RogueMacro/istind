@@ -7,7 +7,7 @@ use crate::{
     synthesize::arch::{
         Assemble, MachineCode,
         arm::{
-            instr::{ImmShift, Instruction},
+            instr::{ImmShift16, Instruction},
             reg::{Reg, RegMap, Register},
         },
     },
@@ -43,7 +43,7 @@ impl Assemble for ArmAssembler {
         });
 
         asm.emit(instr::Movz {
-            shift: ImmShift::L0,
+            shift: ImmShift16::L0,
             imm_value: 0x1,
             dest: Reg::X16,
         });
@@ -57,7 +57,6 @@ impl Assemble for ArmAssembler {
 impl ArmAssembler {
     fn emit(&mut self, instr: impl Instruction) {
         self.code.instructions.extend(instr.encode().to_le_bytes());
-        println!("Emit: {:?}", instr);
     }
 
     fn current_offset(&self) -> u64 {
@@ -80,24 +79,10 @@ impl ArmAssembler {
 
     fn asm_item(&mut self, item: Item) {
         let Item::Function { name, bb } = item;
-        println!("Assembling function {}", name);
         self.functions.insert(name, self.current_offset());
 
         let (regmap, stack_size) = reg::allocate(&bb);
         self.regmap = Some(regmap);
-
-        let mut entries: Vec<_> = self
-            .regmap
-            .as_ref()
-            .unwrap()
-            .iter()
-            .map(|((vreg, idx), guard)| ((*vreg, *idx), *guard))
-            .collect();
-
-        entries.sort_by_key(|((_, i), _)| *i);
-        for ((vreg, idx), guard) in entries {
-            println!("Idx({}): {} -> {:?}", idx, vreg, guard);
-        }
 
         self.begin_stack(stack_size);
 
@@ -199,7 +184,7 @@ impl ArmAssembler {
 
     fn emit_movz(&mut self, n: i64, dest: Register) {
         self.emit(instr::Movz {
-            shift: ImmShift::L0,
+            shift: ImmShift16::L0,
             imm_value: n as u16,
             dest,
         });

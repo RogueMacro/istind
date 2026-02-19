@@ -4,6 +4,9 @@ use ux::{i12, i26, u12};
 
 use super::reg::Register;
 
+/// An Armv8 instruction.
+///
+/// All Armv8 instructions are 32 bits long.
 pub trait Instruction: std::fmt::Debug {
     fn encode(&self) -> u32;
 }
@@ -14,21 +17,34 @@ impl Instruction for u32 {
     }
 }
 
+/// An immediate shift specifier with a 16-bit step size.
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
-pub enum ImmShift {
+pub enum ImmShift16 {
     L0 = 0,
     L16 = 1,
     L32 = 2,
     L48 = 3,
 }
 
+/// Input to an instruction that has variants for both immediate values and registers.
 #[derive(Debug, Clone, Copy)]
 pub enum Input<I> {
     Reg(Register),
     Imm(I),
 }
 
+/// ADD instruction.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  0  0  0  1  0  1  1  shift 0  Rm             imm6              Rn             Rd
+///
+/// - shift: (00) LSL (01) LSR (10) ASR (11) Reserved
+/// - imm6: shift amount (0-63)
+/// - Rn: first source register
+/// - Rm: second source register
+/// - Rd: destination register
 #[derive(Debug, Clone, Copy)]
 pub struct Add {
     pub a: Register,
@@ -138,7 +154,7 @@ impl Instruction for MovReg {
 /// - Rd: destination register
 #[derive(Debug, Clone, Copy)]
 pub struct Movz {
-    pub shift: ImmShift,
+    pub shift: ImmShift16,
     pub imm_value: u16,
     pub dest: Register,
 }

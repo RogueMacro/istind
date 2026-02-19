@@ -14,8 +14,11 @@ use crate::{
 };
 
 pub type Reg = Register;
+
+/// A map from (vreg, instruction position) to a [RegisterGuard].
 pub type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
 
+/// All general-purpose registers + stack pointer on the ARM architecture.
 #[repr(u32)]
 #[derive(EnumIter, FromPrimitive, ToPrimitive, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Register {
@@ -53,6 +56,11 @@ pub enum Register {
     SP = 31,  // stack pointer (X31) (not general purpose)
 }
 
+/// Used in register allocation when mapping a virtual register to a physical register. This
+/// protects a register if using the register for a value requires loading that value from stack,
+/// saving the existing register value to the stack, or both.
+///
+/// To use this register in an operation, call the [unwrap()](Self::unwrap) method.
 #[derive(Debug, Clone, Copy)]
 pub enum RegisterGuard {
     Ready(Register),
@@ -63,6 +71,10 @@ pub enum RegisterGuard {
 }
 
 impl RegisterGuard {
+    /// Returns the register that this guard protects.
+    ///
+    /// Do not use this register if you are not sure it doesn't overwrite a value and where the
+    /// virtual register is located.
     pub fn inner_reg(&self) -> Register {
         match *self {
             RegisterGuard::Ready(reg) => reg,
@@ -72,6 +84,9 @@ impl RegisterGuard {
         }
     }
 
+    /// Unwraps the inner register by potentially emitting a load and/or store instruction. Calling
+    /// this function will ensure the value ends up in the returned register, and that the old
+    /// value in the register is saved to the stack if necessary.
     pub fn unwrap(&self, asm: &mut ArmAssembler) -> Register {
         match *self {
             Self::Ready(reg) => reg,
@@ -100,16 +115,24 @@ impl RegisterGuard {
     }
 }
 
+/// Location of a virtual register at any given time.
 #[derive(Debug, Clone, Copy)]
 pub enum Location {
     Register(Register),
     Stack(u12),
 }
 
-/// Returns (RegMap, stack size)
+/// Allocates physical registers for each virtual register at any given instruction.
+///
+/// # Returns
+///
+/// The generated allocation map ([RegMap]) and the resulting stack size.
 pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
+    // TODO: Use callee-saved registers
+
     use Register::*;
 
+    // General-purpose caller-saved registers
     let mut phys_regs = vec![
         X0, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15,
     ];
@@ -128,27 +151,19 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
     let mut regmap = RegMap::new();
 
     for (op_idx, _) in bb.ops.iter().enumerate() {
-        println!(
-            "\n> At instruction {} (%0: {:?})",
-            op_idx,
-            map.get(&VirtualReg(0))
-        );
         let mut retired_regs = Vec::new();
 
         for (&vreg, lifetime) in lifetimes.iter_mut() {
             if let Some(interval) = lifetime.at_mut(op_idx) {
-                println!("overlapping interval: {} (loc: {:?})", vreg, map.get(&vreg));
                 // This vreg overlaps (is active) at this op index
                 let reg_guard: RegisterGuard = match (interval.register, map.get(&vreg).copied()) {
                     (Some(reg), _) => {
                         // This interval has already been allocated.
-                        println!("already allocated in reg X{}", reg);
                         interval.register = Some(reg);
                         RegisterGuard::Ready(Register::from_u32(reg).unwrap())
                     }
                     (None, Some(Location::Register(reg))) => {
                         // This value already exists in a register from a previous allocation.
-                        println!("already in reg X{}", reg as u32);
                         interval.register = Some(reg as u32);
                         RegisterGuard::Ready(reg)
                     }
@@ -163,15 +178,10 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
 
                         match (phys_regs.pop(), location) {
                             (Some(reg), Some(offset)) => {
-                                println!("it is on the stack, found empty reg X{}", reg as u32);
                                 interval.register = Some(reg as u32);
                                 RegisterGuard::Load(offset, reg)
                             }
                             (Some(reg), None) => {
-                                println!(
-                                    "it is not on the stack, but found empty reg X{}",
-                                    reg as u32
-                                );
                                 interval.register = Some(reg as u32);
                                 RegisterGuard::Ready(reg)
                             }
@@ -194,19 +204,11 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
 
                                 match (dead_vreg, location) {
                                     (Some((dead_vreg, reg)), Some(offset)) => {
-                                        println!(
-                                            "it is on the stack, found dead reg X{} ({})",
-                                            reg as u32, dead_vreg
-                                        );
                                         retired_regs.push(dead_vreg);
                                         interval.register = Some(reg as u32);
                                         RegisterGuard::Load(offset, reg)
                                     }
                                     (Some((dead_vreg, reg)), None) => {
-                                        println!(
-                                            "it is NOT on the stack, but dead reg X{} ({})",
-                                            reg as u32, dead_vreg
-                                        );
                                         retired_regs.push(dead_vreg);
                                         interval.register = Some(reg as u32);
                                         RegisterGuard::Ready(reg)
@@ -235,24 +237,11 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
                                             .unwrap();
 
                                         map.insert(furthest_use_vreg, Location::Stack(stack_ptr));
-                                        println!(
-                                            "!added location on stack for {}",
-                                            furthest_use_vreg
-                                        );
-                                        println!("now: {:?}", map.get(&furthest_use_vreg));
                                         interval.register = Some(reg as u32);
 
                                         let reg_guard = if let Some(offset) = location {
-                                            println!(
-                                                "it is on the stack, pushing reg {} (X{})",
-                                                furthest_use_vreg, reg as u32
-                                            );
                                             RegisterGuard::SaveAndLoad(stack_ptr, offset, reg)
                                         } else {
-                                            println!(
-                                                "it is NOT on the stack, but pushing reg {} (X{})",
-                                                furthest_use_vreg, reg as u32
-                                            );
                                             RegisterGuard::Save(stack_ptr, reg)
                                         };
 
@@ -266,20 +255,12 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
                     }
                 };
 
-                if let Some(l) = map.insert(vreg, Location::Register(reg_guard.inner_reg())) {
-                    if let Location::Register(r) = l
-                        && r == reg_guard.inner_reg()
-                    {
-                    } else {
-                        println!("!replaced location for {} from {:?}", vreg, l);
-                    }
-                }
+                map.insert(vreg, Location::Register(reg_guard.inner_reg()));
                 regmap.insert((vreg, op_idx), reg_guard);
             }
         }
 
         for vreg in retired_regs {
-            println!("/ retired {}", vreg);
             map.remove(&vreg);
         }
     }
@@ -289,8 +270,7 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
     // dead src reg can only be reused for a dest reg
     // on the same instruction, not another src reg.
 
-    println!("Lifetimes ({}):", lifetimes.len());
-    crate::ir::lifetime::print_lifetimes(&lifetimes);
+    // crate::ir::lifetime::print_lifetimes(&lifetimes);
 
     (regmap, stack_ptr)
 }

@@ -60,9 +60,6 @@ impl Lexer {
     pub fn lex_one(&mut self) -> Result<(), Error> {
         self.current = self.next.take();
         self.next = self.lex_next()?;
-        if let Some((tok, _)) = &self.next {
-            println!("lexed: {:?}", tok);
-        }
         Ok(())
     }
 

@@ -1,15 +1,14 @@
 use std::{
     fs::{File, Permissions},
-    io::Write,
     os::unix::fs::PermissionsExt,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use apple_codesign::{MachOSigner, SettingsScope, SigningSettings};
 use bytemuck::bytes_of;
 use mach_o::{Header, LoadCommand};
 
-use crate::synthesize::arch::MachineCode;
+use crate::synthesize::{arch::MachineCode, exe::ExecutableError};
 
 use super::{
     Executable,
@@ -24,10 +23,13 @@ mod mach_o;
 #[derive(Default)]
 pub struct AppleExecutable {
     binary_identifier: Option<String>,
+    path: Option<PathBuf>,
 }
 
 impl Executable for AppleExecutable {
-    fn build(&self, code: MachineCode, out_path: impl AsRef<Path>) {
+    fn build(&mut self, code: MachineCode, out_path: impl AsRef<Path>) {
+        let out_path = out_path.as_ref();
+
         // Mach-O file:
         // Header
         // LC_SEGMENT (__PAGEZERO)
@@ -233,7 +235,7 @@ impl Executable for AppleExecutable {
         vec.extend(&vec![0u8; text_seg_padding]);
         vec.extend(&codesign);
 
-        let mut file = File::create(&out_path).unwrap();
+        let mut file = File::create(out_path).unwrap();
 
         let signer = MachOSigner::new(&vec).unwrap();
         let mut sign_settings = SigningSettings::default();
@@ -248,11 +250,23 @@ impl Executable for AppleExecutable {
             .unwrap();
 
         std::fs::set_permissions(out_path, Permissions::from_mode(0o755)).unwrap();
+
+        self.path = Some(out_path.to_owned());
     }
 
     fn with_binary_identifier(mut self, ident: String) -> Self {
         self.binary_identifier = Some(ident);
         self
+    }
+
+    fn run(&self) -> Result<(), ExecutableError> {
+        let Some(path) = self.path.as_ref() else {
+            return Err(ExecutableError::NoBuildPath);
+        };
+
+        let _exit_code = std::process::Command::new(path).status()?;
+
+        Ok(())
     }
 }
 

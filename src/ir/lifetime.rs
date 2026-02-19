@@ -4,6 +4,7 @@ use colored::{Color, Colorize};
 
 use crate::ir::VirtualReg;
 
+/// An interval where a variable is used continuously.
 #[derive(Debug, Clone)]
 pub struct Interval {
     pub range: Range<usize>,
@@ -21,37 +22,45 @@ impl Lifetime {
         &self.intervals
     }
 
+    /// First usage if this variable.
     pub fn start(&self) -> Option<usize> {
         self.intervals.iter().map(|i| i.range.start).min()
     }
 
+    /// Last usage of this variable.
     pub fn end(&self) -> Option<usize> {
         self.intervals.iter().map(|i| i.range.end).max()
     }
 
+    /// Get a reference to the interval active at this instruction.
     pub fn at(&self, position: usize) -> Option<&Interval> {
         self.intervals.iter().find(|i| i.range.contains(&position))
     }
 
+    /// Get a mutable reference to the interval active at this instruction.
     pub fn at_mut(&mut self, position: usize) -> Option<&mut Interval> {
         self.intervals
             .iter_mut()
             .find(|i| i.range.contains(&position))
     }
 
-    pub fn set_register(&mut self, position: usize, location: Option<u32>) {
+    /// Sets the register allocated this variable should be allocated to at this position.
+    ///
+    /// If there is no interval at this position, nothing happens.
+    pub fn set_register(&mut self, position: usize, register: Option<u32>) {
         for interval in self.intervals.iter_mut() {
             if interval.range.contains(&position) {
-                interval.register = location;
+                interval.register = register;
             }
         }
     }
 
-    pub fn next_use_after(&self, op_idx: usize) -> Option<usize> {
+    /// Get the next use of this variable *after* the specified instruction.
+    pub fn next_use_after(&self, position: usize) -> Option<usize> {
         self.intervals
             .iter()
             .map(|i| i.range.start)
-            .find(|s| *s > op_idx)
+            .find(|s| *s > position)
     }
 
     /// Inserts the interval such that the vec keeps chronological order.
@@ -76,7 +85,7 @@ impl Lifetime {
     }
 }
 
-/// Prints a very simple debug version of a lifetime register with limited information.
+/// Prints a very simple debug version of a lifetime registry with limited information.
 pub fn print_lifetimes(lifetimes: &HashMap<VirtualReg, Lifetime>) {
     let end = lifetimes
         .values()

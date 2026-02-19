@@ -4,12 +4,9 @@ use ariadne::Source;
 
 use crate::{
     analyze::{Error, ast::parse::Parser, lex::Lexer},
-    ir::{IR, Item, VirtualReg, lifetime},
+    ir::IR,
     synthesize::{
-        arch::{
-            Assemble, MachineCode,
-            arm::{self, ArmAssembler},
-        },
+        arch::{Assemble, MachineCode, arm::ArmAssembler},
         exe::Executable,
     },
 };
@@ -54,11 +51,7 @@ impl<E: Executable> Compiler<E> {
         let parser = Parser::new(name, lexer);
         let ast = parser.into_ast()?;
 
-        println!("{:#?}", ast);
-
-        let mut ir = IR::generate(ast);
-
-        println!("{}", ir);
+        let ir = IR::generate(ast);
 
         let code = ArmAssembler::assemble(ir);
 
