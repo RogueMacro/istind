@@ -248,18 +248,23 @@ impl Instruction for Store {
 /// - Rd: destination register
 #[derive(Debug, Clone, Copy)]
 pub struct Sub {
-    pub imm: i12,
-    pub src: Register,
+    pub a: Register,
+    pub b: Input<i12>,
     pub dest: Register,
 }
 
 impl Instruction for Sub {
     fn encode(&self) -> u32 {
-        let imm: i16 = self.imm.into();
-        let src = self.src as u32;
+        let a = self.a as u32;
         let dest = self.dest as u32;
 
-        (0b110100010_0 << 22) | ((imm as u32) << 10) | (src << 5) | dest
+        match self.b {
+            Input::Reg(reg) => todo!(),
+            Input::Imm(imm) => {
+                let imm: i16 = imm.into();
+                (0b110100010_0 << 22) | ((imm as u32) << 10) | (a << 5) | dest
+            }
+        }
     }
 }
 

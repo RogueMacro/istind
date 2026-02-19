@@ -45,9 +45,7 @@ impl BlockBuilder {
         for stmt in block {
             match stmt {
                 Statement::Declare { var, expr } => {
-                    if self.vregs.contains_key(&var) {
-                        panic!("variable declared twice");
-                    }
+                    assert!(!self.vregs.contains_key(&var), "variable declared twice");
 
                     let dest = self.get_or_insert_vreg(var);
                     let src = self.unroll_expr(&expr, Some(dest));
@@ -73,6 +71,33 @@ impl BlockBuilder {
 
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
                 self.ops.push(Op::Add { a, b, dest });
+
+                SourceVal::VReg(dest)
+            }
+            Expression::Subtraction(expr1, expr2) => {
+                let a = self.unroll_expr(expr1.as_ref(), None);
+                let b = self.unroll_expr(expr2.as_ref(), None);
+
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+                self.ops.push(Op::Subtract { a, b, dest });
+
+                SourceVal::VReg(dest)
+            }
+            Expression::Multiplication(expr1, expr2) => {
+                let a = self.unroll_expr(expr1.as_ref(), None);
+                let b = self.unroll_expr(expr2.as_ref(), None);
+
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+                self.ops.push(Op::Multiply { a, b, dest });
+
+                SourceVal::VReg(dest)
+            }
+            Expression::Division(expr1, expr2) => {
+                let a = self.unroll_expr(expr1.as_ref(), None);
+                let b = self.unroll_expr(expr2.as_ref(), None);
+
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+                self.ops.push(Op::Divide { a, b, dest });
 
                 SourceVal::VReg(dest)
             }

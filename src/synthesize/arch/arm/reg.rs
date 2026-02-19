@@ -150,7 +150,7 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
 
     let mut regmap = RegMap::new();
 
-    for (op_idx, _) in bb.ops.iter().enumerate() {
+    for op_idx in 0..bb.ops.len() {
         let mut retired_regs = Vec::new();
 
         for (&vreg, lifetime) in lifetimes.iter_mut() {

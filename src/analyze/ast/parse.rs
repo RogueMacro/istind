@@ -156,14 +156,27 @@ impl Parser {
             }
         };
 
-        if matches!(
-            self.lexer.current(),
-            Some((Token::Operator(Operator::Plus), _))
-        ) {
+        if let Some((Token::Operator(op), _)) = self.lexer.current()
+            && matches!(
+                op,
+                Operator::Plus | Operator::Minus | Operator::Star | Operator::Slash
+            )
+        {
+            // Better way to pattern match and avoid shadowing?
+            let op = *op;
+
             self.lexer.take_current()?;
             let sub_expr = self.parse_expr()?;
 
-            return Ok(Expression::Addition(Box::new(expr), Box::new(sub_expr)));
+            let expr = match op {
+                Operator::Plus => Expression::Addition(Box::new(expr), Box::new(sub_expr)),
+                Operator::Minus => Expression::Subtraction(Box::new(expr), Box::new(sub_expr)),
+                Operator::Star => Expression::Multiplication(Box::new(expr), Box::new(sub_expr)),
+                Operator::Slash => Expression::Division(Box::new(expr), Box::new(sub_expr)),
+                _ => unreachable!(),
+            };
+
+            return Ok(expr);
         }
 
         Ok(expr)

@@ -7,7 +7,7 @@ pub enum Token {
     Operator(Operator),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Operator {
     LeftParenthesis,
     RightParenthesis,
@@ -15,6 +15,9 @@ pub enum Operator {
     RightCurlyBracket,
     Equality,
     Plus,
+    Minus,
+    Star,
+    Slash,
 }
 
 impl Operator {
@@ -26,6 +29,9 @@ impl Operator {
             '}' => Self::RightCurlyBracket,
             '=' => Self::Equality,
             '+' => Self::Plus,
+            '-' => Self::Minus,
+            '*' => Self::Star,
+            '/' => Self::Slash,
             _ => return None,
         };
 

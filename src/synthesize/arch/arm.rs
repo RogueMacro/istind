@@ -104,12 +104,11 @@ impl ArmAssembler {
             let stack_size = stack_size as i16;
             let stack_size = i12::new(stack_size * 8);
 
-            println!("pushing stack: {}", stack_size);
             self.stacks.push(stack_size);
 
             self.emit(instr::Sub {
-                imm: stack_size,
-                src: Reg::SP,
+                a: Reg::SP,
+                b: instr::Input::Imm(stack_size),
                 dest: Reg::SP,
             });
         }
@@ -131,6 +130,9 @@ impl ArmAssembler {
         match op {
             Operation::Assign { src, dest } => self.emit_assign(src, dest, idx),
             Operation::Add { a, b, dest } => self.emit_add(a, b, dest, idx),
+            Operation::Subtract { a, b, dest } => self.emit_sub(a, b, dest, idx),
+            Operation::Multiply { a, b, dest } => todo!(),
+            Operation::Divide { a, b, dest } => todo!(),
             Operation::Return { value } => self.emit_return(value, idx),
         }
     }
@@ -161,6 +163,32 @@ impl ArmAssembler {
                 let a = self.map_reg(a, idx);
                 let b = self.map_reg(b, idx);
                 self.emit(instr::Add {
+                    a,
+                    b: instr::Input::Reg(b),
+                    dest,
+                })
+            }
+        }
+    }
+
+    fn emit_sub(&mut self, a: SourceVal, b: SourceVal, dest: VirtualReg, idx: usize) {
+        let dest = self.map_reg(dest, idx);
+        match (a, b) {
+            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.emit_movz(a - b, dest),
+            (SourceVal::Immediate(n), SourceVal::VReg(vreg))
+            | (SourceVal::VReg(vreg), SourceVal::Immediate(n)) => {
+                assert!(n <= i16::MAX as i64);
+                let a = self.map_reg(vreg, idx);
+                self.emit(instr::Sub {
+                    a,
+                    b: instr::Input::Imm(i12::new(n as i16)),
+                    dest,
+                });
+            }
+            (SourceVal::VReg(a), SourceVal::VReg(b)) => {
+                let a = self.map_reg(a, idx);
+                let b = self.map_reg(b, idx);
+                self.emit(instr::Sub {
                     a,
                     b: instr::Input::Reg(b),
                     dest,

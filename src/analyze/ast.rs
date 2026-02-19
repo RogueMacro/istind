@@ -32,4 +32,7 @@ pub enum Expression {
     Const(i64),
     Var(String),
     Addition(Box<Expression>, Box<Expression>),
+    Subtraction(Box<Expression>, Box<Expression>),
+    Multiplication(Box<Expression>, Box<Expression>),
+    Division(Box<Expression>, Box<Expression>),
 }
