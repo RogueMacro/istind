@@ -85,7 +85,10 @@ impl BlockBuilder {
             }
             Expression::Multiplication(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
+                let a = self.src_to_vreg(a);
+
                 let b = self.unroll_expr(expr2.as_ref(), None);
+                let b = self.src_to_vreg(b);
 
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
                 self.ops.push(Op::Multiply { a, b, dest });
@@ -118,5 +121,16 @@ impl BlockBuilder {
         let vreg = VirtualReg(self.vreg_counter);
         self.vreg_counter += 1;
         vreg
+    }
+
+    fn src_to_vreg(&mut self, src: SourceVal) -> VirtualReg {
+        match src {
+            SourceVal::Immediate(_) => {
+                let dest = self.get_vreg();
+                self.ops.push(Op::Assign { src, dest });
+                dest
+            }
+            SourceVal::VReg(vreg) => vreg,
+        }
     }
 }

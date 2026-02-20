@@ -131,7 +131,7 @@ impl ArmAssembler {
             Operation::Assign { src, dest } => self.emit_assign(src, dest, idx),
             Operation::Add { a, b, dest } => self.emit_add(a, b, dest, idx),
             Operation::Subtract { a, b, dest } => self.emit_sub(a, b, dest, idx),
-            Operation::Multiply { a, b, dest } => todo!(),
+            Operation::Multiply { a, b, dest } => self.emit_mul(a, b, dest, idx),
             Operation::Divide { a, b, dest } => todo!(),
             Operation::Return { value } => self.emit_return(value, idx),
         }
@@ -195,6 +195,13 @@ impl ArmAssembler {
                 })
             }
         }
+    }
+
+    fn emit_mul(&mut self, a: VirtualReg, b: VirtualReg, dest: VirtualReg, idx: usize) {
+        let dest = self.map_reg(dest, idx);
+        let a = self.map_reg(a, idx);
+        let b = self.map_reg(b, idx);
+        self.emit(instr::Mul { a, b, dest });
     }
 
     fn emit_return(&mut self, src: SourceVal, idx: usize) {
