@@ -88,6 +88,36 @@ fn c_addition() {
 }
 
 #[test]
+fn c_subtraction() {
+    runs(
+        "c_subtraction",
+        3,
+        "
+        int main() {
+            int a = 7;
+            int b = 4;
+            return a - b;
+        }
+        ",
+    );
+}
+
+#[test]
+fn c_multiplication() {
+    runs(
+        "c_multiplication",
+        6,
+        "
+        int main() {
+            int a = 2;
+            int b = 3;
+            return a * b;
+        }
+        ",
+    );
+}
+
+#[test]
 fn c_function_call() {
     runs(
         "c_function_call",
