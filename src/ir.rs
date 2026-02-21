@@ -63,7 +63,7 @@ impl BasicBlock {
 
 pub type Op = Operation;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Operation {
     Assign {
         src: SourceVal,
@@ -91,6 +91,9 @@ pub enum Operation {
     },
     Return {
         value: SourceVal,
+    },
+    Call {
+        function: String,
     },
 }
 
@@ -122,7 +125,9 @@ impl Operation {
                 push(Some(*b));
                 push(Some(*dest));
             }
+
             Operation::Return { value } => push(value.reg()),
+            Operation::Call { .. } => (),
         }
     }
 }
@@ -165,6 +170,7 @@ impl fmt::Display for IR {
                         writeln!(f, "    {} = {} / {}", dest, a, b)?
                     }
                     Operation::Return { value } => writeln!(f, "    ret {}", value)?,
+                    Operation::Call { function } => writeln!(f, "    {}()", function)?,
                 }
             }
 

@@ -34,7 +34,7 @@ impl Parser {
     }
 
     fn parse_item(&mut self) -> Result<Item, Error> {
-        let (token, range) = self.take_next()?;
+        let (token, range) = self.expect_take_current()?;
         let Token::Keyword(keyword) = token else {
             return Err(self
                 .err_ctx
@@ -48,7 +48,7 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Item, Error> {
-        let (token, range) = self.take_next()?;
+        let (token, range) = self.expect_take_current()?;
         let Token::Ident(name) = token else {
             return Err(self
                 .err_ctx
@@ -65,12 +65,12 @@ impl Parser {
             "expected closing parenthesis",
         )?;
 
-        let body = self.parse_body()?;
+        let body = self.parse_block()?;
 
         Ok(Item::Function { name, body })
     }
 
-    fn parse_body(&mut self) -> Result<Vec<Statement>, Error> {
+    fn parse_block(&mut self) -> Result<Vec<Statement>, Error> {
         self.expect_next(
             |t| matches!(t, Token::Operator(Operator::LeftCurlyBracket)),
             "expected opening curly bracket",
@@ -83,26 +83,27 @@ impl Parser {
                 return Ok(statements);
             }
 
-            let statement = match token {
-                Token::Keyword(_) => self.parse_keyword()?,
-                _ => {
-                    return Err(self
-                        .err_ctx
-                        .unexpected_token(range.clone(), "unknown identifier"));
-                }
-            };
+            let range = range.clone();
 
-            statements.push(statement);
+            if let Token::Keyword(keyword) = token {
+                let keyword = *keyword;
+                self.lexer.take_current()?;
+                let stmt = self.parse_keyword(keyword, range)?;
+                statements.push(stmt);
+            } else if let Expression::FnCall(function) = self.parse_expr()? {
+                self.expect_semicolon()?;
+                statements.push(Statement::FnCall(function));
+            } else {
+                return Err(self
+                    .err_ctx
+                    .unexpected_token(range.clone(), "this is not in our dictionary"));
+            }
         }
 
         Err(self.err_ctx.unexpected_eof(self.lexer.index()))
     }
 
-    fn parse_keyword(&mut self) -> Result<Statement, Error> {
-        let (Token::Keyword(keyword), range) = self.take_next()? else {
-            unreachable!()
-        };
-
+    fn parse_keyword(&mut self, keyword: Keyword, range: Range<usize>) -> Result<Statement, Error> {
         match keyword {
             Keyword::Return => self.parse_return(),
             Keyword::Let => self.parse_declaration(),
@@ -118,7 +119,7 @@ impl Parser {
     }
 
     fn parse_declaration(&mut self) -> Result<Statement, Error> {
-        let (token, range) = self.take_next()?;
+        let (token, range) = self.expect_take_current()?;
         let Token::Ident(var) = token else {
             return Err(self
                 .err_ctx
@@ -142,12 +143,9 @@ impl Parser {
 
         let expr = match token {
             Some((Token::Number(num), _)) => Expression::Const(num),
-            Some((Token::Ident(ident), _)) => Expression::Var(ident),
-            Some((token, range)) => {
-                return Err(self.err_ctx.unexpected_token(
-                    range,
-                    format!("expected number after return, got: {:?}", token),
-                ));
+            Some((Token::Ident(ident), _)) => self.parse_ident_expr(ident)?,
+            Some((_, range)) => {
+                return Err(self.err_ctx.unexpected_token(range, "invalid expression"));
             }
             None => {
                 return Err(self
@@ -182,11 +180,29 @@ impl Parser {
         Ok(expr)
     }
 
+    fn parse_ident_expr(&mut self, ident: String) -> Result<Expression, Error> {
+        if matches!(
+            self.lexer.current(),
+            Some((Token::Operator(Operator::LeftParenthesis), _))
+        ) {
+            self.lexer.take_current()?;
+
+            self.expect_next(
+                |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
+                "expected closing parenthesis",
+            )?;
+
+            Ok(Expression::FnCall(ident))
+        } else {
+            Ok(Expression::Var(ident))
+        }
+    }
+
     fn expect_next<F>(&mut self, matches: F, message: impl ToString) -> Result<Token, Error>
     where
         F: FnOnce(&Token) -> bool,
     {
-        let (token, range) = self.take_next()?;
+        let (token, range) = self.expect_take_current()?;
         if !matches(&token) {
             return Err(self.err_ctx.unexpected_token(range, message));
         }
@@ -215,7 +231,7 @@ impl Parser {
         }
     }
 
-    fn take_next(&mut self) -> Result<(Token, Range<usize>), Error> {
+    fn expect_take_current(&mut self) -> Result<(Token, Range<usize>), Error> {
         let token = self.lexer.take_current()?;
         match token {
             Some(token) => Ok(token),

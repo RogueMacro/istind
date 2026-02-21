@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Keyword(Keyword),
     Number(i64),
@@ -39,7 +39,7 @@ impl Operator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Keyword {
     Function,
     Return,

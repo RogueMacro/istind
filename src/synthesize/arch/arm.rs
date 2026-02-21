@@ -21,7 +21,8 @@ pub mod reg;
 #[derive(Default)]
 pub struct ArmAssembler {
     code: MachineCode,
-    functions: HashMap<String, u64>,
+    functions: HashMap<String, usize>,
+    fn_calls: Vec<(String, usize)>,
     regmap: Option<RegMap>,
     stacks: Vec<i12>,
 }
@@ -34,7 +35,7 @@ impl Assemble for ArmAssembler {
             asm.asm_item(item);
         }
 
-        asm.code.entry_point_offset = asm.current_offset();
+        asm.code.entry_point_offset = asm.current_offset() as u64;
         let rel_main_offset =
             (*asm.functions.get("main").unwrap() as i32 - asm.current_offset() as i32) / 4;
 
@@ -50,6 +51,21 @@ impl Assemble for ArmAssembler {
 
         asm.emit(instr::Syscall);
 
+        for (function, call_offset) in std::mem::take(&mut asm.fn_calls) {
+            let fn_offset = asm
+                .functions
+                .get(&function)
+                .expect("trying to assemble call to unknown function");
+
+            let rel_offset = (*fn_offset as i32 - call_offset as i32) / 4;
+            asm.emit_at(
+                call_offset,
+                instr::BranchLink {
+                    addr: i26::new(rel_offset),
+                },
+            );
+        }
+
         asm.code
     }
 }
@@ -59,8 +75,13 @@ impl ArmAssembler {
         self.code.instructions.extend(instr.encode().to_le_bytes());
     }
 
-    fn current_offset(&self) -> u64 {
-        self.code.instructions.len() as u64
+    fn emit_at(&mut self, offset: usize, instr: impl Instruction) {
+        let bytes = instr.encode().to_le_bytes();
+        self.code.instructions[offset..(offset + 4)].copy_from_slice(&bytes);
+    }
+
+    fn current_offset(&self) -> usize {
+        self.code.instructions.len()
     }
 
     fn map_reg(&mut self, vreg: VirtualReg, op_idx: usize) -> Register {
@@ -86,7 +107,7 @@ impl ArmAssembler {
 
         self.begin_stack(stack_size);
 
-        for (idx, op) in bb.ops.iter().copied().enumerate() {
+        for (idx, op) in bb.ops.into_iter().enumerate() {
             self.asm_op(op, idx);
         }
 
@@ -134,7 +155,14 @@ impl ArmAssembler {
             Operation::Multiply { a, b, dest } => self.emit_mul(a, b, dest, idx),
             Operation::Divide { a, b, dest } => todo!(),
             Operation::Return { value } => self.emit_return(value, idx),
+            Operation::Call { function } => self.emit_call(function),
         }
+    }
+
+    fn emit_call(&mut self, function: String) {
+        let offset = self.current_offset();
+        self.emit_nop();
+        self.fn_calls.push((function, offset));
     }
 
     fn emit_store(&mut self, offset: u12, register: Register) {
@@ -234,5 +262,9 @@ impl ArmAssembler {
                 self.emit(instr::MovReg { src, dest });
             }
         }
+    }
+
+    fn emit_nop(&mut self) {
+        self.emit(instr::Nop);
     }
 }

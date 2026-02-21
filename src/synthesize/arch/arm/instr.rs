@@ -196,6 +196,22 @@ impl Instruction for Mul {
     }
 }
 
+/// NOP instruction.
+///
+/// Does nothing except advance the program counter. Can be used for alignment.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  1  0  1  0  1  0  1  0  0  0  0  0  0  1  1  0  0  1  0  0  0  0  0  0  0  0  1  1  1  1  1
+#[derive(Debug, Clone, Copy)]
+pub struct Nop;
+
+impl Instruction for Nop {
+    fn encode(&self) -> u32 {
+        0b11010101000000110010000000011111
+    }
+}
+
 /// Return from subroutine to offset stored in link register.
 ///
 /// Encoding:

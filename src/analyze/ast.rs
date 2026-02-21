@@ -25,6 +25,7 @@ pub enum Statement {
     Declare { var: String, expr: Expression },
     // Assign { var: String, expr: Expression },
     Return(Expression),
+    FnCall(String),
 }
 
 #[derive(Debug, Clone)]
@@ -35,4 +36,6 @@ pub enum Expression {
     Subtraction(Box<Expression>, Box<Expression>),
     Multiplication(Box<Expression>, Box<Expression>),
     Division(Box<Expression>, Box<Expression>),
+
+    FnCall(String),
 }

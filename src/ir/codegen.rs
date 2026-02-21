@@ -55,6 +55,9 @@ impl BlockBuilder {
                     let value = self.unroll_expr(&expr, None);
                     self.ops.push(Op::Return { value });
                 }
+                Statement::FnCall(function) => {
+                    self.ops.push(Op::Call { function });
+                }
             }
         }
 
@@ -104,6 +107,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
+            Expression::FnCall(function) => todo!(),
         }
     }
 
