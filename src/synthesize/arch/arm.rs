@@ -115,6 +115,18 @@ impl ArmAssembler {
     }
 
     fn begin_stack(&mut self, stack_size: u12) {
+        self.emit(instr::Stp {
+            base: Reg::SP,
+            first: Reg::FP,
+            second: Reg::LR,
+            offset: i12::new(-16),
+        });
+
+        self.emit(instr::MovReg {
+            src: Reg::SP,
+            dest: Reg::FP,
+        });
+
         if stack_size != u12::new(0) {
             let mut stack_size: u16 = stack_size.into();
             // align to 16 bytes
@@ -145,6 +157,13 @@ impl ArmAssembler {
                 dest: Reg::SP,
             });
         }
+
+        self.emit(instr::Ldp {
+            base: Reg::SP,
+            first: Reg::FP,
+            second: Reg::LR,
+            offset: i12::new(16),
+        });
     }
 
     fn asm_op(&mut self, op: Operation, idx: usize) {
@@ -155,14 +174,19 @@ impl ArmAssembler {
             Operation::Multiply { a, b, dest } => self.emit_mul(a, b, dest, idx),
             Operation::Divide { a, b, dest } => todo!(),
             Operation::Return { value } => self.emit_return(value, idx),
-            Operation::Call { function } => self.emit_call(function),
+            Operation::Call { function, dest } => self.emit_call(function, dest, idx),
         }
     }
 
-    fn emit_call(&mut self, function: String) {
+    fn emit_call(&mut self, function: String, dest: Option<VirtualReg>, idx: usize) {
         let offset = self.current_offset();
         self.emit_nop();
         self.fn_calls.push((function, offset));
+
+        if let Some(dest) = dest {
+            let dest = self.map_reg(dest, idx);
+            self.emit(instr::MovReg { src: Reg::X0, dest });
+        }
     }
 
     fn emit_store(&mut self, offset: u12, register: Register) {

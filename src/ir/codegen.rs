@@ -56,7 +56,10 @@ impl BlockBuilder {
                     self.ops.push(Op::Return { value });
                 }
                 Statement::FnCall(function) => {
-                    self.ops.push(Op::Call { function });
+                    self.ops.push(Op::Call {
+                        function,
+                        dest: None,
+                    });
                 }
             }
         }
@@ -107,7 +110,15 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            Expression::FnCall(function) => todo!(),
+            Expression::FnCall(function) => {
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+                self.ops.push(Op::Call {
+                    function: function.clone(),
+                    dest: Some(dest),
+                });
+
+                SourceVal::VReg(dest)
+            }
         }
     }
 

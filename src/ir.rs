@@ -94,6 +94,7 @@ pub enum Operation {
     },
     Call {
         function: String,
+        dest: Option<VirtualReg>,
     },
 }
 
@@ -127,7 +128,7 @@ impl Operation {
             }
 
             Operation::Return { value } => push(value.reg()),
-            Operation::Call { .. } => (),
+            Operation::Call { dest, .. } => push(*dest),
         }
     }
 }
@@ -170,7 +171,13 @@ impl fmt::Display for IR {
                         writeln!(f, "    {} = {} / {}", dest, a, b)?
                     }
                     Operation::Return { value } => writeln!(f, "    ret {}", value)?,
-                    Operation::Call { function } => writeln!(f, "    {}()", function)?,
+                    Operation::Call { function, dest } => {
+                        if let Some(dest) = dest {
+                            writeln!(f, "    {} = call {}()", dest, function)?
+                        } else {
+                            writeln!(f, "    call {}()", function)?
+                        }
+                    }
                 }
             }
 
