@@ -11,15 +11,3 @@ claks is a personal project exploring compiler construction from scratch. It cov
 - **IR** – lowers the AST into an architecture-neutral intermediate representation
 - **Backend** – emits native machine code (currently targeting AArch64/macOS)
 
-## Build & Run
-
-```bash
-# Build
-cargo build
-
-# Run tests
-cargo test
-
-# Compile a source file
-cargo run -- <path/to/source>
-```
