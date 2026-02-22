@@ -1,6 +1,6 @@
 use std::{fs, path::Path, rc::Rc};
 
-use claks::{
+use istind::{
     Compiler,
     synthesize::exe::{DummyExecutable, Executable, mac::AppleExecutable},
 };
@@ -20,7 +20,7 @@ fn runs(test_name: &str, expect_exit_code: i32, source: &str) {
 
     fs::create_dir_all("ctarget/test").unwrap();
 
-    let mut exe = AppleExecutable::default().with_binary_identifier("claks.test");
+    let mut exe = AppleExecutable::default().with_binary_identifier("istind.test");
     exe.build(code, Path::new("ctarget/test").join(test_name));
     let status = exe.run().unwrap();
 
