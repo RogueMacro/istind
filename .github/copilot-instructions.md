@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-This repository contains **claks**, a compiler written entirely in Rust, covering both frontend and backend stages.
+This repository contains **istind**, a compiler written entirely in Rust, covering both frontend and backend stages.
 
 ## Architecture
 

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use claks::{Compiler, synthesize::exe::mac::AppleExecutable};
+use istind::{Compiler, synthesize::exe::mac::AppleExecutable};
 use clap::Parser;
 use colored::Colorize;
 

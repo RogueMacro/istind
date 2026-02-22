@@ -1024,25 +1024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "claks"
-version = "0.1.0"
-dependencies = [
- "apple-codesign",
- "ariadne",
- "bitflags",
- "bytemuck",
- "clap",
- "colored",
- "num-derive",
- "num-traits",
- "strum",
- "thiserror 2.0.18",
- "tracing",
- "tracing-subscriber",
- "ux",
-]
-
-[[package]]
 name = "clap"
 version = "4.5.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2295,6 +2276,25 @@ name = "is_terminal_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
+name = "istind"
+version = "0.1.0"
+dependencies = [
+ "apple-codesign",
+ "ariadne",
+ "bitflags",
+ "bytemuck",
+ "clap",
+ "colored",
+ "num-derive",
+ "num-traits",
+ "strum",
+ "thiserror 2.0.18",
+ "tracing",
+ "tracing-subscriber",
+ "ux",
+]
 
 [[package]]
 name = "itertools"
