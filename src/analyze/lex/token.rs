@@ -44,6 +44,9 @@ pub enum Keyword {
     Function,
     Return,
     Let,
+    Int,
+    Bool,
+    Char,
 }
 
 impl Keyword {
@@ -52,6 +55,9 @@ impl Keyword {
             "fn" => Keyword::Function,
             "return" => Keyword::Return,
             "let" => Keyword::Let,
+            "int" => Keyword::Int,
+            "bool" => Keyword::Bool,
+            "char" => Keyword::Char,
             _ => return None,
         };
 

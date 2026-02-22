@@ -2,7 +2,7 @@ use std::{ops::Range, rc::Rc};
 
 use crate::analyze::{
     Error, ErrorCode, ErrorContext,
-    ast::{AST, Expression, Item, Statement},
+    ast::{AST, Expression, Item, Statement, Type},
     lex::{
         Lexer,
         token::{Keyword, Operator, Token},
@@ -42,12 +42,15 @@ impl Parser {
         };
 
         match keyword {
-            Keyword::Function => self.parse_function(),
+            Keyword::Function => self.parse_function(None),
+            Keyword::Int => self.parse_function(Some(Type::Int)),
+            Keyword::Bool => self.parse_function(Some(Type::Bool)),
+            Keyword::Char => self.parse_function(Some(Type::Char)),
             _ => Err(self.err_ctx.unexpected_token(range, "expected keyword: fn")),
         }
     }
 
-    fn parse_function(&mut self) -> Result<Item, Error> {
+    fn parse_function(&mut self, return_type: Option<Type>) -> Result<Item, Error> {
         let (token, range) = self.take_next()?;
         let Token::Ident(name) = token else {
             return Err(self
@@ -67,7 +70,11 @@ impl Parser {
 
         let body = self.parse_body()?;
 
-        Ok(Item::Function { name, body })
+        Ok(Item::Function {
+            name,
+            return_type,
+            body,
+        })
     }
 
     fn parse_body(&mut self) -> Result<Vec<Statement>, Error> {
@@ -105,7 +112,10 @@ impl Parser {
 
         match keyword {
             Keyword::Return => self.parse_return(),
-            Keyword::Let => self.parse_declaration(),
+            Keyword::Let => self.parse_declaration(None),
+            Keyword::Int => self.parse_declaration(Some(Type::Int)),
+            Keyword::Bool => self.parse_declaration(Some(Type::Bool)),
+            Keyword::Char => self.parse_declaration(Some(Type::Char)),
             _ => Err(self.err_ctx.unexpected_token(range, "unexpected keyword")),
         }
     }
@@ -117,7 +127,7 @@ impl Parser {
         Ok(Statement::Return(expr))
     }
 
-    fn parse_declaration(&mut self) -> Result<Statement, Error> {
+    fn parse_declaration(&mut self, ty: Option<Type>) -> Result<Statement, Error> {
         let (token, range) = self.take_next()?;
         let Token::Ident(var) = token else {
             return Err(self
@@ -133,7 +143,7 @@ impl Parser {
         let expr = self.parse_expr()?;
         self.expect_semicolon()?;
 
-        Ok(Statement::Declare { var, expr })
+        Ok(Statement::Declare { var, ty, expr })
     }
 
     fn parse_expr(&mut self) -> Result<Expression, Error> {

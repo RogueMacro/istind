@@ -15,14 +15,29 @@ impl AST {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type {
+    Int,
+    Bool,
+    Char,
+}
+
 #[derive(Debug)]
 pub enum Item {
-    Function { name: String, body: Vec<Statement> },
+    Function {
+        name: String,
+        return_type: Option<Type>,
+        body: Vec<Statement>,
+    },
 }
 
 #[derive(Debug)]
 pub enum Statement {
-    Declare { var: String, expr: Expression },
+    Declare {
+        var: String,
+        ty: Option<Type>,
+        expr: Expression,
+    },
     // Assign { var: String, expr: Expression },
     Return(Expression),
 }

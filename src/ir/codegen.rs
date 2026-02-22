@@ -11,7 +11,11 @@ impl IR {
 
         for item in ast.items {
             let item = match item {
-                AstItem::Function { name, body } => Item::Function {
+                AstItem::Function {
+                    name,
+                    return_type: _,
+                    body,
+                } => Item::Function {
                     name,
                     bb: BlockBuilder::new().build(body),
                 },
@@ -44,7 +48,7 @@ impl BlockBuilder {
 
         for stmt in block {
             match stmt {
-                Statement::Declare { var, expr } => {
+                Statement::Declare { var, ty: _, expr } => {
                     assert!(!self.vregs.contains_key(&var), "variable declared twice");
 
                     let dest = self.get_or_insert_vreg(var);
