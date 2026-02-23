@@ -141,8 +141,9 @@ impl Instruction for LoadPair {
         let first = self.first as u32;
         let second = self.second as u32;
         let imm7: i8 = self.offset.into();
+        let imm7 = imm7 as u32 & 0b1111111;
 
-        0b1010100011 << 22 | ((imm7 as u32) << 15) | (second << 10) | (base << 5) | first
+        0b1010100011 << 22 | imm7 << 15 | (second << 10) | (base << 5) | first
     }
 }
 
@@ -322,7 +323,7 @@ impl Instruction for Store {
 ///
 /// Encoding (pre-index):
 /// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
-/// 1  0  1  0  1  0  0  0  1  0  imm7                 Rt2            Rn             Rt
+/// 1  0  1  0  1  0  0  1  1  0  imm7                 Rt2            Rn             Rt
 ///
 /// - imm7: signed offset (scaled by 8 bytes)
 /// - Rn: base register (writeback)
@@ -342,8 +343,9 @@ impl Instruction for StorePair {
         let first = self.first as u32;
         let second = self.second as u32;
         let imm7: i8 = self.offset.into();
+        let imm7 = imm7 as u32 & 0b1111111;
 
-        0b1010100110 << 22 | ((imm7 as u32) << 15) | (second << 10) | (base << 5) | first
+        (0b1010100110 << 22) | (imm7 << 15) | (second << 10) | (base << 5) | first
     }
 }
 

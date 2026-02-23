@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ux::{i12, i26, u12};
+use ux::{i7, i12, i26, u12};
 
 use crate::{
     ir::{IR, Item, Operation, SourceVal, VirtualReg},
@@ -111,11 +111,11 @@ impl ArmAssembler {
     }
 
     fn begin_stack(&mut self, stack_size: u12) {
-        self.emit(instr::Stp {
+        self.emit(instr::StorePair {
             base: Reg::SP,
             first: Reg::FP,
             second: Reg::LR,
-            offset: i12::new(-16),
+            offset: i7::new(-2),
         });
 
         self.emit(instr::MovReg {
@@ -154,11 +154,11 @@ impl ArmAssembler {
             });
         }
 
-        self.emit(instr::Ldp {
+        self.emit(instr::LoadPair {
             base: Reg::SP,
             first: Reg::FP,
             second: Reg::LR,
-            offset: i12::new(16),
+            offset: i7::new(2),
         });
     }
 
