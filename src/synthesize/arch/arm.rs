@@ -18,6 +18,8 @@ pub mod reg;
 
 // const MAX_EXIT_CODE: u16 = 255; // On UNIX
 
+const MAIN_FN: &str = "main";
+
 #[derive(Default)]
 pub struct ArmAssembler {
     code: MachineCode,
@@ -35,13 +37,7 @@ impl Assemble for ArmAssembler {
             asm.asm_item(item);
         }
 
-        asm.code.entry_point_offset = asm.current_offset() as u64;
-        let rel_main_offset =
-            (*asm.functions.get("main").unwrap() as i32 - asm.current_offset() as i32) / 4;
-
-        asm.emit(instr::BranchLink {
-            addr: i26::new(rel_main_offset),
-        });
+        asm.emit_call(MAIN_FN.to_owned(), None, 0);
 
         asm.emit(instr::Movz {
             shift: ImmShift16::L0,
