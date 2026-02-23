@@ -1,6 +1,6 @@
 #![allow(clippy::unusual_byte_groupings)]
 
-use ux::{i12, i26, u12};
+use ux::{i7, i12, i26, u12};
 
 use super::reg::Register;
 
@@ -115,69 +115,34 @@ impl Instruction for Load {
     }
 }
 
-/// STP instruction (immediate, pre-indexed).
-///
-/// Stores two registers to memory and updates the base register.
-///
-/// Encoding (64-bit, pre-index):
-/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
-/// 1  0  1  0  1  0  0  1  1  0  imm7                              Rt2            Rn             Rt
-///
-/// - imm7: signed offset (scaled by 8 bytes)
-/// - Rn: base register (writeback)
-/// - Rt: first source register
-/// - Rt2: second source register
-#[derive(Debug, Clone, Copy)]
-pub struct Stp {
-    pub base: Register,
-    pub first: Register,
-    pub second: Register,
-
-    /// Offset in bytes (must be a multiple of 8).
-    pub offset: i12,
-}
-
-impl Instruction for Stp {
-    fn encode(&self) -> u32 {
-        let base = self.base as u32;
-        let first = self.first as u32;
-        let second = self.second as u32;
-        let imm7 = encode_pair_offset(self.offset);
-
-        0xA9800000 | (imm7 << 15) | (second << 10) | (base << 5) | first
-    }
-}
-
-/// LDP instruction (immediate, post-indexed).
+/// LDP instruction.
 ///
 /// Loads two registers from memory and updates the base register.
 ///
-/// Encoding (64-bit, post-index):
+/// Encoding (post-index):
 /// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
-/// 1  0  1  0  1  0  0  0  1  1  imm7                              Rt2            Rn             Rt
+/// 1  0  1  0  1  0  0  0  1  1  imm7                 Rt2            Rn             Rt
 ///
 /// - imm7: signed offset (scaled by 8 bytes)
 /// - Rn: base register (writeback)
 /// - Rt: first destination register
 /// - Rt2: second destination register
 #[derive(Debug, Clone, Copy)]
-pub struct Ldp {
+pub struct LoadPair {
     pub base: Register,
     pub first: Register,
     pub second: Register,
-
-    /// Offset in bytes (must be a multiple of 8).
-    pub offset: i12,
+    pub offset: i7,
 }
 
-impl Instruction for Ldp {
+impl Instruction for LoadPair {
     fn encode(&self) -> u32 {
         let base = self.base as u32;
         let first = self.first as u32;
         let second = self.second as u32;
-        let imm7 = encode_pair_offset(self.offset);
+        let imm7: i8 = self.offset.into();
 
-        0xA8C00000 | (imm7 << 15) | (second << 10) | (base << 5) | first
+        0b1010100011 << 22 | ((imm7 as u32) << 15) | (second << 10) | (base << 5) | first
     }
 }
 
@@ -351,6 +316,37 @@ impl Instruction for Store {
     }
 }
 
+/// STP instruction.
+///
+/// Stores two registers to memory and updates the base register.
+///
+/// Encoding (pre-index):
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  0  1  0  1  0  0  0  1  0  imm7                 Rt2            Rn             Rt
+///
+/// - imm7: signed offset (scaled by 8 bytes)
+/// - Rn: base register (writeback)
+/// - Rt: first source register
+/// - Rt2: second source register
+#[derive(Debug, Clone, Copy)]
+pub struct StorePair {
+    pub base: Register,
+    pub first: Register,
+    pub second: Register,
+    pub offset: i7,
+}
+
+impl Instruction for StorePair {
+    fn encode(&self) -> u32 {
+        let base = self.base as u32;
+        let first = self.first as u32;
+        let second = self.second as u32;
+        let imm7: i8 = self.offset.into();
+
+        0b1010100110 << 22 | ((imm7 as u32) << 15) | (second << 10) | (base << 5) | first
+    }
+}
+
 /// SUB instruction.
 ///
 /// Subtracts immediate value from register.
@@ -416,14 +412,6 @@ impl Instruction for Syscall {
     fn encode(&self) -> u32 {
         Svc { imm: 0x80 }.encode()
     }
-}
-
-fn encode_pair_offset(offset: i12) -> u32 {
-    let imm: i16 = offset.into();
-    assert!(imm % 8 == 0, "pair offset must be 8-byte aligned");
-    let scaled = imm / 8;
-    assert!(scaled >= -64 && scaled <= 63, "pair offset out of range");
-    (scaled as i32 & 0x7f) as u32
 }
 
 fn to_u32(n: impl Into<i32>) -> u32 {
