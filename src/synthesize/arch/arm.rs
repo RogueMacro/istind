@@ -209,6 +209,12 @@ impl<'c> OpEmitter<'c> {
         self.asm.emit_nop();
         self.asm.fn_calls.push((function, offset));
 
+        if let Some(regs_to_save) = self.alloc.stack_save(idx) {
+            for (reg, offset) in regs_to_save {
+                self.asm.emit_store(*offset, *reg);
+            }
+        }
+
         if let Some(dest) = dest {
             let dest = self.map_reg(dest, idx);
             self.asm.emit(instr::MovReg { src: Reg::X0, dest });

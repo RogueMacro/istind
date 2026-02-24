@@ -6,7 +6,7 @@ use strum::EnumIter;
 use ux::u12;
 
 use crate::{
-    ir::{BasicBlock, VirtualReg},
+    ir::{BasicBlock, Op, VirtualReg},
     synthesize::arch::arm::{
         ArmAssembler,
         instr::{self, Input},
@@ -119,6 +119,39 @@ pub enum Location {
     Stack(u12),
 }
 
+#[derive(Default)]
+struct Stack {
+    stack_size: u12,
+    free_slots: Vec<u12>,
+}
+
+impl Stack {
+    pub fn stack_size(&self) -> u12 {
+        self.stack_size
+    }
+
+    pub fn alloc(&mut self) -> u12 {
+        if let Some(slot) = self.free_slots.pop() {
+            slot
+        } else {
+            self.stack_size = self.stack_size + u12::new(1);
+            self.stack_size - u12::new(1)
+        }
+    }
+
+    pub fn free(&mut self, slot: u12) {
+        assert!(slot < self.stack_size);
+        assert!(!self.free_slots.contains(&slot));
+
+        self.free_slots.push(slot);
+    }
+}
+
+use Register::*;
+const CALLER_SAVED_REGS: &[Register] = &[
+    X0, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15,
+];
+
 /// Allocates physical registers for each virtual register at any given instruction.
 ///
 /// # Returns
@@ -127,12 +160,8 @@ pub enum Location {
 pub fn allocate(bb: &BasicBlock) -> Allocator {
     // TODO: Use callee-saved registers
 
-    use Register::*;
-
     // General-purpose caller-saved registers
-    let mut phys_regs = vec![
-        X0, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15,
-    ];
+    let mut phys_regs: Vec<Register> = CALLER_SAVED_REGS.to_vec();
 
     let mut location_map = BTreeMap::new();
     let mut lifetimes = bb.lifetimes();
@@ -146,9 +175,27 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
     let mut stack_size = u12::new(0);
 
     let mut regmap = RegMap::new();
+    let mut stack = Stack::default();
+    let mut stack_saves: HashMap<usize, Vec<(Register, u12)>> = HashMap::new();
 
-    for op_idx in 0..bb.ops.len() {
+    for (op_idx, op) in bb.ops.iter().enumerate() {
         let mut retired_regs = Vec::new();
+
+        if let Op::Call { .. } = op {
+            let regs_to_save: Vec<(Register, u12)> = location_map
+                .values()
+                .filter_map(|l| match l {
+                    Location::Register(r) => Some((*r, stack.alloc())),
+                    _ => None,
+                })
+                .collect();
+
+            if !regs_to_save.is_empty() {
+                stack_saves.insert(op_idx, regs_to_save);
+                phys_regs.clear();
+                phys_regs.extend_from_slice(CALLER_SAVED_REGS);
+            }
+        }
 
         for (&vreg, lifetime) in lifetimes.iter_mut() {
             if let Some(interval) = lifetime.at_mut(op_idx) {
@@ -256,6 +303,13 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
                         }
                     };
 
+                match reg_guard {
+                    RegisterGuard::Load(slot, _) | RegisterGuard::SaveAndLoad(_, slot, _) => {
+                        stack.free(slot);
+                    }
+                    _ => (),
+                }
+
                 location_map.insert(vreg, Location::Register(reg_guard.inner_reg()));
                 regmap.insert((vreg, op_idx), reg_guard);
             }
@@ -276,7 +330,7 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
     Allocator {
         regmap,
         stack_size,
-        stack_saves: Default::default(),
+        stack_saves,
     }
 }
 
@@ -287,7 +341,7 @@ type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
 pub struct Allocator {
     regmap: RegMap,
     stack_size: u12,
-    stack_saves: HashMap<usize, Vec<Register>>,
+    stack_saves: HashMap<usize, Vec<(Register, u12)>>,
 }
 
 impl Allocator {
@@ -304,9 +358,7 @@ impl Allocator {
         self.stack_size
     }
 
-    pub fn stack_save(&self, instr_index: usize) -> &[Register] {
-        self.stack_saves
-            .get(&instr_index)
-            .expect("missing stack save for function call")
+    pub fn stack_save(&self, instr_index: usize) -> Option<&Vec<(Register, u12)>> {
+        self.stack_saves.get(&instr_index)
     }
 }
