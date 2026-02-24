@@ -86,10 +86,12 @@ impl ArmAssembler {
             .as_ref()
             .expect("no regmap generated for this operation")
             .get(&(vreg, op_idx))
-            .expect(&format!(
-                "no physical register mapped to {} at index={}",
-                vreg, op_idx
-            ));
+            .unwrap_or_else(|| {
+                panic!(
+                    "no physical register mapped to {} at index={}",
+                    vreg, op_idx
+                )
+            });
 
         reg_guard.unwrap(self)
     }
