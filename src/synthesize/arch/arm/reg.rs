@@ -15,9 +15,6 @@ use crate::{
 
 pub type Reg = Register;
 
-/// A map from (vreg, instruction position) to a [RegisterGuard].
-pub type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
-
 /// All general-purpose registers + stack pointer on the ARM architecture.
 #[repr(u32)]
 #[derive(EnumIter, FromPrimitive, ToPrimitive, Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -126,8 +123,8 @@ pub enum Location {
 ///
 /// # Returns
 ///
-/// The generated allocation map ([RegMap]) and the resulting stack size.
-pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
+/// The generated allocation map ([Allocator])
+pub fn allocate(bb: &BasicBlock) -> Allocator {
     // TODO: Use callee-saved registers
 
     use Register::*;
@@ -137,7 +134,7 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
         X0, X1, X2, X3, X4, X5, X6, X7, X8, X9, X10, X11, X12, X13, X14, X15,
     ];
 
-    let mut map: BTreeMap<VirtualReg, Location> = BTreeMap::new();
+    let mut location_map = BTreeMap::new();
     let mut lifetimes = bb.lifetimes();
     let lifetimes_imm = lifetimes.clone();
 
@@ -146,7 +143,7 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
         .map(|(vreg, lifetime)| (*vreg, lifetime.end().unwrap() - 1))
         .collect();
 
-    let mut stack_ptr = u12::new(0);
+    let mut stack_size = u12::new(0);
 
     let mut regmap = RegMap::new();
 
@@ -156,112 +153,116 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
         for (&vreg, lifetime) in lifetimes.iter_mut() {
             if let Some(interval) = lifetime.at_mut(op_idx) {
                 // This vreg overlaps (is active) at this op index
-                let reg_guard: RegisterGuard = match (interval.register, map.get(&vreg).copied()) {
-                    (Some(reg), _) => {
-                        // This interval has already been allocated.
-                        interval.register = Some(reg);
-                        RegisterGuard::Ready(Register::from_u32(reg).unwrap())
-                    }
-                    (None, Some(Location::Register(reg))) => {
-                        // This value already exists in a register from a previous allocation.
-                        interval.register = Some(reg as u32);
-                        RegisterGuard::Ready(reg)
-                    }
+                let reg_guard: RegisterGuard =
+                    match (interval.register, location_map.get(&vreg).copied()) {
+                        (Some(reg), _) => {
+                            // This interval has already been allocated.
+                            interval.register = Some(reg);
+                            RegisterGuard::Ready(Register::from_u32(reg).unwrap())
+                        }
+                        (None, Some(Location::Register(reg))) => {
+                            // This value already exists in a register from a previous allocation.
+                            interval.register = Some(reg as u32);
+                            RegisterGuard::Ready(reg)
+                        }
 
-                    (None, location) => {
-                        let location = location.map(|l| {
-                            let Location::Stack(offset) = l else {
-                                unreachable!()
-                            };
-                            offset
-                        });
+                        (None, location) => {
+                            let location = location.map(|l| {
+                                let Location::Stack(offset) = l else {
+                                    unreachable!()
+                                };
+                                offset
+                            });
 
-                        match (phys_regs.pop(), location) {
-                            (Some(reg), Some(offset)) => {
-                                interval.register = Some(reg as u32);
-                                RegisterGuard::Load(offset, reg)
-                            }
-                            (Some(reg), None) => {
-                                interval.register = Some(reg as u32);
-                                RegisterGuard::Ready(reg)
-                            }
-                            (None, location) => {
-                                // All physical registers busy, look for dead virtual registers before pushing
-                                // one onto the stack.
+                            match (phys_regs.pop(), location) {
+                                (Some(reg), Some(offset)) => {
+                                    interval.register = Some(reg as u32);
+                                    RegisterGuard::Load(offset, reg)
+                                }
+                                (Some(reg), None) => {
+                                    interval.register = Some(reg as u32);
+                                    RegisterGuard::Ready(reg)
+                                }
+                                (None, location) => {
+                                    // All physical registers busy, look for dead virtual registers before pushing
+                                    // one onto the stack.
 
-                                let mut dead_vreg = None;
+                                    let mut dead_vreg = None;
 
-                                for (vreg, loc) in map.iter() {
-                                    if let Location::Register(reg) = loc {
-                                        let (_, end) =
-                                            last_uses.iter().find(|(v, _)| v == vreg).unwrap();
-                                        if *end <= op_idx {
-                                            dead_vreg = Some((*vreg, *reg));
-                                            break;
+                                    for (vreg, loc) in location_map.iter() {
+                                        if let Location::Register(reg) = loc {
+                                            let (_, end) =
+                                                last_uses.iter().find(|(v, _)| v == vreg).unwrap();
+                                            if *end <= op_idx {
+                                                dead_vreg = Some((*vreg, *reg));
+                                                break;
+                                            }
                                         }
                                     }
-                                }
 
-                                match (dead_vreg, location) {
-                                    (Some((dead_vreg, reg)), Some(offset)) => {
-                                        retired_regs.push(dead_vreg);
-                                        interval.register = Some(reg as u32);
-                                        RegisterGuard::Load(offset, reg)
-                                    }
-                                    (Some((dead_vreg, reg)), None) => {
-                                        retired_regs.push(dead_vreg);
-                                        interval.register = Some(reg as u32);
-                                        RegisterGuard::Ready(reg)
-                                    }
-                                    (None, location) => {
-                                        // All busy virtual registers are to be used in the future.
-                                        // Therefor we must save one register to the stack (preferrably the one to be
-                                        // used last) that is not currently overlapping.
+                                    match (dead_vreg, location) {
+                                        (Some((dead_vreg, reg)), Some(offset)) => {
+                                            retired_regs.push(dead_vreg);
+                                            interval.register = Some(reg as u32);
+                                            RegisterGuard::Load(offset, reg)
+                                        }
+                                        (Some((dead_vreg, reg)), None) => {
+                                            retired_regs.push(dead_vreg);
+                                            interval.register = Some(reg as u32);
+                                            RegisterGuard::Ready(reg)
+                                        }
+                                        (None, location) => {
+                                            // All busy virtual registers are to be used in the future.
+                                            // Therefor we must save one register to the stack (preferrably the one to be
+                                            // used last) that is not currently overlapping.
 
-                                        let (&furthest_use_vreg, &reg, _) = map
-                                            .iter()
-                                            .filter_map(|(vreg, loc)| {
-                                                if let Location::Register(reg) = loc {
-                                                    let next_use = lifetimes_imm
-                                                        .get(vreg)
-                                                        .unwrap()
-                                                        .next_use_after(op_idx)
-                                                        .unwrap_or(usize::MAX);
+                                            let (&furthest_use_vreg, &reg, _) = location_map
+                                                .iter()
+                                                .filter_map(|(vreg, loc)| {
+                                                    if let Location::Register(reg) = loc {
+                                                        let next_use = lifetimes_imm
+                                                            .get(vreg)
+                                                            .unwrap()
+                                                            .next_use_after(op_idx)
+                                                            .unwrap_or(usize::MAX);
 
-                                                    Some((vreg, reg, next_use))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .max_by_key(|(_, _, next_use)| *next_use)
-                                            .unwrap();
+                                                        Some((vreg, reg, next_use))
+                                                    } else {
+                                                        None
+                                                    }
+                                                })
+                                                .max_by_key(|(_, _, next_use)| *next_use)
+                                                .unwrap();
 
-                                        map.insert(furthest_use_vreg, Location::Stack(stack_ptr));
-                                        interval.register = Some(reg as u32);
+                                            location_map.insert(
+                                                furthest_use_vreg,
+                                                Location::Stack(stack_size),
+                                            );
+                                            interval.register = Some(reg as u32);
 
-                                        let reg_guard = if let Some(offset) = location {
-                                            RegisterGuard::SaveAndLoad(stack_ptr, offset, reg)
-                                        } else {
-                                            RegisterGuard::Save(stack_ptr, reg)
-                                        };
+                                            let reg_guard = if let Some(offset) = location {
+                                                RegisterGuard::SaveAndLoad(stack_size, offset, reg)
+                                            } else {
+                                                RegisterGuard::Save(stack_size, reg)
+                                            };
 
-                                        stack_ptr = stack_ptr + u12::new(1);
+                                            stack_size = stack_size + u12::new(1);
 
-                                        reg_guard
+                                            reg_guard
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                };
+                    };
 
-                map.insert(vreg, Location::Register(reg_guard.inner_reg()));
+                location_map.insert(vreg, Location::Register(reg_guard.inner_reg()));
                 regmap.insert((vreg, op_idx), reg_guard);
             }
         }
 
         for vreg in retired_regs {
-            map.remove(&vreg);
+            location_map.remove(&vreg);
         }
     }
 
@@ -272,5 +273,40 @@ pub fn allocate(bb: &BasicBlock) -> (RegMap, u12) {
 
     // crate::ir::lifetime::print_lifetimes(&lifetimes);
 
-    (regmap, stack_ptr)
+    Allocator {
+        regmap,
+        stack_size,
+        stack_saves: Default::default(),
+    }
+}
+
+/// A map from (vreg, instruction position) to a [RegisterGuard].
+type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
+
+#[derive(Default)]
+pub struct Allocator {
+    regmap: RegMap,
+    stack_size: u12,
+    stack_saves: HashMap<usize, Vec<Register>>,
+}
+
+impl Allocator {
+    pub fn map(&self, vreg: VirtualReg, instr_index: usize) -> RegisterGuard {
+        *self.regmap.get(&(vreg, instr_index)).unwrap_or_else(|| {
+            panic!(
+                "no physical register mapped to {} at index {}",
+                vreg, instr_index
+            )
+        })
+    }
+
+    pub fn stack_size(&self) -> u12 {
+        self.stack_size
+    }
+
+    pub fn stack_save(&self, instr_index: usize) -> &[Register] {
+        self.stack_saves
+            .get(&instr_index)
+            .expect("missing stack save for function call")
+    }
 }

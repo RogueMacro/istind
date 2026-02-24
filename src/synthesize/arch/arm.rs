@@ -8,7 +8,7 @@ use crate::{
         Assemble, MachineCode,
         arm::{
             instr::{ImmShift16, Instruction},
-            reg::{Reg, RegMap, Register},
+            reg::{Allocator, Reg, Register},
         },
     },
 };
@@ -25,7 +25,6 @@ pub struct ArmAssembler {
     code: MachineCode,
     functions: HashMap<String, usize>,
     fn_calls: Vec<(String, usize)>,
-    regmap: Option<RegMap>,
     stacks: Vec<i12>,
 }
 
@@ -37,7 +36,8 @@ impl Assemble for ArmAssembler {
             asm.asm_item(item);
         }
 
-        asm.emit_call(MAIN_FN.to_owned(), None, 0);
+        let mut emitter = OpEmitter::new(&mut asm, Allocator::default());
+        emitter.emit_call(MAIN_FN.to_owned(), None, 0);
 
         asm.emit(instr::Movz {
             shift: ImmShift16::L0,
@@ -80,36 +80,18 @@ impl ArmAssembler {
         self.code.instructions.len()
     }
 
-    fn map_reg(&mut self, vreg: VirtualReg, op_idx: usize) -> Register {
-        let reg_guard = *self
-            .regmap
-            .as_ref()
-            .expect("no regmap generated for this operation")
-            .get(&(vreg, op_idx))
-            .unwrap_or_else(|| {
-                panic!(
-                    "no physical register mapped to {} at index={}",
-                    vreg, op_idx
-                )
-            });
-
-        reg_guard.unwrap(self)
-    }
-
     fn asm_item(&mut self, item: Item) {
         let Item::Function { name, bb } = item;
         self.functions.insert(name, self.current_offset());
 
-        let (regmap, stack_size) = reg::allocate(&bb);
-        self.regmap = Some(regmap);
+        let alloc = reg::allocate(&bb);
 
-        self.begin_stack(stack_size);
+        self.begin_stack(alloc.stack_size());
 
+        let mut emitter = OpEmitter::new(self, alloc);
         for (idx, op) in bb.ops.into_iter().enumerate() {
-            self.asm_op(op, idx);
+            emitter.asm_op(op, idx);
         }
-
-        self.regmap = None;
     }
 
     fn begin_stack(&mut self, stack_size: u12) {
@@ -164,6 +146,41 @@ impl ArmAssembler {
         });
     }
 
+    fn emit_store(&mut self, offset: u12, register: Register) {
+        self.emit(instr::Store {
+            base: Reg::SP,
+            offset: instr::Input::Imm(offset),
+            register,
+        });
+    }
+
+    fn emit_movz(&mut self, n: i64, dest: Register) {
+        self.emit(instr::Movz {
+            shift: ImmShift16::L0,
+            imm_value: n as u16,
+            dest,
+        });
+    }
+
+    fn emit_nop(&mut self) {
+        self.emit(instr::Nop);
+    }
+}
+
+struct OpEmitter<'c> {
+    asm: &'c mut ArmAssembler,
+    alloc: Allocator,
+}
+
+impl<'c> OpEmitter<'c> {
+    pub fn new(asm: &'c mut ArmAssembler, alloc: Allocator) -> Self {
+        Self { asm, alloc }
+    }
+
+    fn map_reg(&mut self, vreg: VirtualReg, instr_index: usize) -> Register {
+        self.alloc.map(vreg, instr_index).unwrap(self.asm)
+    }
+
     fn asm_op(&mut self, op: Operation, idx: usize) {
         match op {
             Operation::Assign { src, dest } => self.emit_assign(src, dest, idx),
@@ -176,34 +193,37 @@ impl ArmAssembler {
         }
     }
 
-    fn emit_call(&mut self, function: String, dest: Option<VirtualReg>, idx: usize) {
-        let offset = self.current_offset();
-        self.emit_nop();
-        self.fn_calls.push((function, offset));
-
-        if let Some(dest) = dest {
-            let dest = self.map_reg(dest, idx);
-            self.emit(instr::MovReg { src: Reg::X0, dest });
+    fn emit_assign(&mut self, src: SourceVal, dest: VirtualReg, idx: usize) {
+        let dest = self.map_reg(dest, idx);
+        match src {
+            SourceVal::Immediate(n) => self.asm.emit_movz(n, dest),
+            SourceVal::VReg(vreg) => {
+                let src = self.map_reg(vreg, idx);
+                self.asm.emit(instr::MovReg { src, dest });
+            }
         }
     }
 
-    fn emit_store(&mut self, offset: u12, register: Register) {
-        self.emit(instr::Store {
-            base: Reg::SP,
-            offset: instr::Input::Imm(offset),
-            register,
-        });
+    fn emit_call(&mut self, function: String, dest: Option<VirtualReg>, idx: usize) {
+        let offset = self.asm.current_offset();
+        self.asm.emit_nop();
+        self.asm.fn_calls.push((function, offset));
+
+        if let Some(dest) = dest {
+            let dest = self.map_reg(dest, idx);
+            self.asm.emit(instr::MovReg { src: Reg::X0, dest });
+        }
     }
 
     fn emit_add(&mut self, a: SourceVal, b: SourceVal, dest: VirtualReg, idx: usize) {
         let dest = self.map_reg(dest, idx);
         match (a, b) {
-            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.emit_movz(a + b, dest),
+            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.asm.emit_movz(a + b, dest),
             (SourceVal::Immediate(n), SourceVal::VReg(vreg))
             | (SourceVal::VReg(vreg), SourceVal::Immediate(n)) => {
                 assert!(n <= i16::MAX as i64);
                 let a = self.map_reg(vreg, idx);
-                self.emit(instr::Add {
+                self.asm.emit(instr::Add {
                     a,
                     b: instr::Input::Imm(i12::new(n as i16)),
                     dest,
@@ -212,7 +232,7 @@ impl ArmAssembler {
             (SourceVal::VReg(a), SourceVal::VReg(b)) => {
                 let a = self.map_reg(a, idx);
                 let b = self.map_reg(b, idx);
-                self.emit(instr::Add {
+                self.asm.emit(instr::Add {
                     a,
                     b: instr::Input::Reg(b),
                     dest,
@@ -224,12 +244,12 @@ impl ArmAssembler {
     fn emit_sub(&mut self, a: SourceVal, b: SourceVal, dest: VirtualReg, idx: usize) {
         let dest = self.map_reg(dest, idx);
         match (a, b) {
-            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.emit_movz(a - b, dest),
+            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.asm.emit_movz(a - b, dest),
             (SourceVal::Immediate(n), SourceVal::VReg(vreg))
             | (SourceVal::VReg(vreg), SourceVal::Immediate(n)) => {
                 assert!(n <= i16::MAX as i64);
                 let a = self.map_reg(vreg, idx);
-                self.emit(instr::Sub {
+                self.asm.emit(instr::Sub {
                     a,
                     b: instr::Input::Imm(i12::new(n as i16)),
                     dest,
@@ -238,7 +258,7 @@ impl ArmAssembler {
             (SourceVal::VReg(a), SourceVal::VReg(b)) => {
                 let a = self.map_reg(a, idx);
                 let b = self.map_reg(b, idx);
-                self.emit(instr::Sub {
+                self.asm.emit(instr::Sub {
                     a,
                     b: instr::Input::Reg(b),
                     dest,
@@ -251,42 +271,19 @@ impl ArmAssembler {
         let dest = self.map_reg(dest, idx);
         let a = self.map_reg(a, idx);
         let b = self.map_reg(b, idx);
-        self.emit(instr::Mul { a, b, dest });
+        self.asm.emit(instr::Mul { a, b, dest });
     }
 
     fn emit_return(&mut self, src: SourceVal, idx: usize) {
         match src {
-            SourceVal::Immediate(n) => self.emit_movz(n, Reg::X0),
+            SourceVal::Immediate(n) => self.asm.emit_movz(n, Reg::X0),
             SourceVal::VReg(vreg) => {
                 let src = self.map_reg(vreg, idx);
-                self.emit(instr::MovReg { src, dest: Reg::X0 });
+                self.asm.emit(instr::MovReg { src, dest: Reg::X0 });
             }
         }
 
-        self.end_stack();
-        self.emit(instr::Ret);
-    }
-
-    fn emit_movz(&mut self, n: i64, dest: Register) {
-        self.emit(instr::Movz {
-            shift: ImmShift16::L0,
-            imm_value: n as u16,
-            dest,
-        });
-    }
-
-    fn emit_assign(&mut self, src: SourceVal, dest: VirtualReg, idx: usize) {
-        let dest = self.map_reg(dest, idx);
-        match src {
-            SourceVal::Immediate(n) => self.emit_movz(n, dest),
-            SourceVal::VReg(vreg) => {
-                let src = self.map_reg(vreg, idx);
-                self.emit(instr::MovReg { src, dest });
-            }
-        }
-    }
-
-    fn emit_nop(&mut self) {
-        self.emit(instr::Nop);
+        self.asm.end_stack();
+        self.asm.emit(instr::Ret);
     }
 }
