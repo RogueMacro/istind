@@ -107,7 +107,7 @@ impl Lexer {
             return Ok(Some((Token::Operator(op), (self.index - 1)..self.index)));
         }
 
-        if c.is_ascii_alphabetic() {
+        if c.is_ascii_alphabetic() || c == '_' {
             return Ok(Some(self.lex_ascii()));
         }
 
@@ -133,7 +133,7 @@ impl Lexer {
         let start = self.index;
         let mut string = String::new();
         while let Some(c) = self.cur_char()
-            && c.is_ascii_alphanumeric()
+            && (c.is_ascii_alphanumeric() || c == '_')
         {
             string.push(c);
             self.index += 1;
