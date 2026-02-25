@@ -30,6 +30,10 @@ cargo test
 cargo run -- <path/to/source>
 ```
 
+## Language Specification
+
+The language being compiled is documented in [`SPEC.md`](SPEC.md). Refer to it when implementing or modifying language features.
+
 ## Key Conventions
 
 - Rust edition **2024** is used; `let`/`while let` chains are idiomatic here.

@@ -1,7 +1,5 @@
 # Language Specification
 
-> **Status:** Draft — based on the tests in `tests/simple.rs`.
-
 ---
 
 ## 1. Lexical Structure
