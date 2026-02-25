@@ -338,6 +338,35 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
     }
 }
 
+/// A map from (vreg, instruction position) to a [RegisterGuard].
+type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
+
+#[derive(Debug, Default)]
+pub struct Allocator {
+    regmap: RegMap,
+    stack_size: u12,
+    stack_saves: HashMap<usize, Vec<(Register, u12)>>,
+}
+
+impl Allocator {
+    pub fn map(&self, vreg: VirtualReg, instr_index: usize) -> RegisterGuard {
+        *self.regmap.get(&(vreg, instr_index)).unwrap_or_else(|| {
+            panic!(
+                "no physical register mapped to {} at index {}",
+                vreg, instr_index
+            )
+        })
+    }
+
+    pub fn stack_size(&self) -> u12 {
+        self.stack_size
+    }
+
+    pub fn stack_save(&self, instr_index: usize) -> Option<&Vec<(Register, u12)>> {
+        self.stack_saves.get(&instr_index)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use ux::u12;
@@ -539,34 +568,5 @@ mod tests {
     fn allocator_map_panics_for_unknown_vreg() {
         let alloc = allocate(&make_bb(vec![]));
         alloc.map(VirtualReg(99), 0);
-    }
-}
-
-/// A map from (vreg, instruction position) to a [RegisterGuard].
-type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
-
-#[derive(Debug, Default)]
-pub struct Allocator {
-    regmap: RegMap,
-    stack_size: u12,
-    stack_saves: HashMap<usize, Vec<(Register, u12)>>,
-}
-
-impl Allocator {
-    pub fn map(&self, vreg: VirtualReg, instr_index: usize) -> RegisterGuard {
-        *self.regmap.get(&(vreg, instr_index)).unwrap_or_else(|| {
-            panic!(
-                "no physical register mapped to {} at index {}",
-                vreg, instr_index
-            )
-        })
-    }
-
-    pub fn stack_size(&self) -> u12 {
-        self.stack_size
-    }
-
-    pub fn stack_save(&self, instr_index: usize) -> Option<&Vec<(Register, u12)>> {
-        self.stack_saves.get(&instr_index)
     }
 }
