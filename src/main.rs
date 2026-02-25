@@ -1,11 +1,12 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    time::Instant,
 };
 
-use istind::{Compiler, synthesize::exe::mac::AppleExecutable};
 use clap::Parser;
 use colored::Colorize;
+use istind::{Compiler, synthesize::exe::mac::AppleExecutable};
 
 #[derive(Parser)]
 #[command(version)]
@@ -21,14 +22,19 @@ fn main() -> Result<(), Error> {
     };
 
     let compiler = Compiler::<AppleExecutable>::default();
+
+    let start = Instant::now();
     if compiler.compile(&args.file, target_mod(module)?).is_err() {
         return Err(Error::CompilationFailed);
     }
+    let end = Instant::now();
+    let dur = end - start;
 
     println!(
-        "{:>12} {}",
-        "Compiled".bright_green(),
-        module.to_string_lossy()
+        "{:>12} {} in {:.2}s",
+        "Compiled".bright_green().bold(),
+        module.to_string_lossy(),
+        dur.as_secs_f32(),
     );
 
     std::process::Command::new("otool")
