@@ -1,4 +1,4 @@
-use std::{ops::Range, rc::Rc};
+use std::{iter::Peekable, ops::Range, rc::Rc};
 
 use ariadne::{ColorGenerator, Label, Report, ReportBuilder, ReportKind};
 
@@ -75,24 +75,28 @@ impl Lexer {
 
 /// Internals
 impl Lexer {
-    fn peek_char(&self, offset: usize) -> Option<char> {
-        self.code.get(self.index + offset).copied()
+    fn peek_char(&self) -> Option<char> {
+        self.code.get(self.index + 1).copied()
     }
 
     fn cur_char(&self) -> Option<char> {
-        self.peek_char(0)
+        self.code.get(self.index).copied()
     }
 
-    fn skip_whitespace(&mut self) {
-        while let Some(c) = self.cur_char()
-            && c.is_whitespace()
-        {
-            self.index += 1;
+    fn find_next_lexable(&mut self) {
+        while let Some(c) = self.cur_char() {
+            if c == '/' && self.peek_char() == Some('/') {
+                self.lex_comment();
+            } else if c.is_whitespace() {
+                self.index += 1;
+            } else {
+                break;
+            }
         }
     }
 
     fn lex_next(&mut self) -> Result<Option<(Token, Range<usize>)>, Error> {
-        self.skip_whitespace();
+        self.find_next_lexable();
 
         let Some(c) = self.cur_char() else {
             return Ok(None);
@@ -156,6 +160,15 @@ impl Lexer {
 
         let num: i64 = string.parse().unwrap();
         (Token::Number(num), start..self.index)
+    }
+
+    fn lex_comment(&mut self) {
+        while let Some(c) = self.peek_char() {
+            self.index += 1;
+            if c == '\n' {
+                break;
+            }
+        }
     }
 
     fn error(&self, pos: usize, length: usize) -> ReportBuilder<'static, Span> {

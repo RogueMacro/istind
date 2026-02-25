@@ -89,6 +89,37 @@ impl Instruction for BranchLink {
     }
 }
 
+/// SDIV or UDIV instruction.
+///
+/// Encoding (SDIV):
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  0  0  1  1  0  1  0  1  1  0  Rm             0  0  0  0  1  1  Rn             Rd
+///
+/// - Rn: first source register
+/// - Rm: second source register
+/// - Rd: destination register
+#[derive(Debug, Clone, Copy)]
+pub struct Div {
+    pub a: Register,
+    pub b: Register,
+    pub dest: Register,
+    pub signed: bool,
+}
+
+impl Instruction for Div {
+    fn encode(&self) -> u32 {
+        let a = self.a as u32;
+        let b = self.b as u32;
+        let dest = self.dest as u32;
+
+        if self.signed {
+            (0b10011010110_00000_000011 << 10) | (b << 16) | (a << 5) | dest
+        } else {
+            todo!()
+        }
+    }
+}
+
 /// LDR instruction.
 ///
 /// Encoding (unsigned offset):

@@ -36,14 +36,12 @@ impl Parser {
     fn parse_item(&mut self) -> Result<Item, Error> {
         let (token, range) = self.expect_take_current()?;
         let Token::Keyword(keyword) = token else {
-            return Err(self
-                .err_ctx
-                .unexpected_token(range, "expected keyword (fn)"));
+            return Err(self.err_ctx.unexpected_token(range, "expected keyword"));
         };
 
         match keyword {
             Keyword::Function => self.parse_function(),
-            _ => Err(self.err_ctx.unexpected_token(range, "expected keyword: fn")),
+            _ => Err(self.err_ctx.unexpected_token(range, "expected function")),
         }
     }
 

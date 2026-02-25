@@ -183,9 +183,13 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
 
         if let Op::Call { .. } = op {
             let regs_to_save: Vec<(Register, u12)> = location_map
-                .values()
-                .filter_map(|l| match l {
-                    Location::Register(r) => Some((*r, stack.alloc())),
+                .values_mut()
+                .filter_map(|l| match *l {
+                    Location::Register(r) => {
+                        let stack_offset = stack.alloc();
+                        *l = Location::Stack(stack_offset);
+                        Some((r, stack_offset))
+                    }
                     _ => None,
                 })
                 .collect();
@@ -337,7 +341,7 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
 /// A map from (vreg, instruction position) to a [RegisterGuard].
 type RegMap = HashMap<(VirtualReg, usize), RegisterGuard>;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Allocator {
     regmap: RegMap,
     stack_size: u12,

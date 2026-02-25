@@ -82,7 +82,7 @@ impl ArmAssembler {
 
     fn asm_item(&mut self, item: Item) {
         let Item::Function { name, bb } = item;
-        self.functions.insert(name, self.current_offset());
+        self.functions.insert(name.clone(), self.current_offset());
 
         let alloc = reg::allocate(&bb);
 
@@ -187,7 +187,7 @@ impl<'c> OpEmitter<'c> {
             Operation::Add { a, b, dest } => self.emit_add(a, b, dest, idx),
             Operation::Subtract { a, b, dest } => self.emit_sub(a, b, dest, idx),
             Operation::Multiply { a, b, dest } => self.emit_mul(a, b, dest, idx),
-            Operation::Divide { a, b, dest } => todo!(),
+            Operation::Divide { a, b, dest } => self.emit_div(a, b, dest, idx),
             Operation::Return { value } => self.emit_return(value, idx),
             Operation::Call { function, dest } => self.emit_call(function, dest, idx),
         }
@@ -205,15 +205,15 @@ impl<'c> OpEmitter<'c> {
     }
 
     fn emit_call(&mut self, function: String, dest: Option<VirtualReg>, idx: usize) {
-        let offset = self.asm.current_offset();
-        self.asm.emit_nop();
-        self.asm.fn_calls.push((function, offset));
-
         if let Some(regs_to_save) = self.alloc.stack_save(idx) {
             for (reg, offset) in regs_to_save {
                 self.asm.emit_store(*offset, *reg);
             }
         }
+
+        let offset = self.asm.current_offset();
+        self.asm.emit_nop();
+        self.asm.fn_calls.push((function.clone(), offset));
 
         if let Some(dest) = dest {
             let dest = self.map_reg(dest, idx);
@@ -278,6 +278,18 @@ impl<'c> OpEmitter<'c> {
         let a = self.map_reg(a, idx);
         let b = self.map_reg(b, idx);
         self.asm.emit(instr::Mul { a, b, dest });
+    }
+
+    fn emit_div(&mut self, a: VirtualReg, b: VirtualReg, dest: VirtualReg, idx: usize) {
+        let dest = self.map_reg(dest, idx);
+        let a = self.map_reg(a, idx);
+        let b = self.map_reg(b, idx);
+        self.asm.emit(instr::Div {
+            a,
+            b,
+            dest,
+            signed: true,
+        });
     }
 
     fn emit_return(&mut self, src: SourceVal, idx: usize) {

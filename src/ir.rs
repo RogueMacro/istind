@@ -85,8 +85,8 @@ pub enum Operation {
         dest: VirtualReg,
     },
     Divide {
-        a: SourceVal,
-        b: SourceVal,
+        a: VirtualReg,
+        b: VirtualReg,
         dest: VirtualReg,
     },
     Return {
@@ -114,14 +114,12 @@ impl Operation {
                 push(src.reg());
                 push(Some(*dest));
             }
-            Operation::Add { a, b, dest }
-            | Operation::Subtract { a, b, dest }
-            | Operation::Divide { a, b, dest } => {
+            Operation::Add { a, b, dest } | Operation::Subtract { a, b, dest } => {
                 push(a.reg());
                 push(b.reg());
                 push(Some(*dest));
             }
-            Operation::Multiply { a, b, dest } => {
+            Operation::Multiply { a, b, dest } | Operation::Divide { a, b, dest } => {
                 push(Some(*a));
                 push(Some(*b));
                 push(Some(*dest));
