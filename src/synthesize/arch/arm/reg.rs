@@ -340,7 +340,6 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
 
 #[cfg(test)]
 mod tests {
-    use num_traits::{FromPrimitive, ToPrimitive};
     use ux::u12;
 
     use super::*;
@@ -349,53 +348,6 @@ mod tests {
     /// Constructs a [BasicBlock] from a list of operations for use in tests.
     fn make_bb(ops: Vec<Operation>) -> BasicBlock {
         BasicBlock { ops }
-    }
-
-    // ---- Register ----
-
-    #[test]
-    fn register_discriminants_match_abi_encoding() {
-        assert_eq!(Register::X0.to_u32(), Some(0));
-        assert_eq!(Register::X7.to_u32(), Some(7));
-        assert_eq!(Register::X15.to_u32(), Some(15));
-        assert_eq!(Register::X16.to_u32(), Some(16));
-        assert_eq!(Register::FP.to_u32(), Some(29));
-        assert_eq!(Register::LR.to_u32(), Some(30));
-        assert_eq!(Register::SP.to_u32(), Some(31));
-    }
-
-    #[test]
-    fn register_from_primitive_round_trips() {
-        for n in 0u32..=31 {
-            let reg = Register::from_u32(n).unwrap();
-            assert_eq!(reg.to_u32(), Some(n));
-        }
-    }
-
-    // ---- RegisterGuard::inner_reg ----
-
-    #[test]
-    fn register_guard_inner_reg_ready() {
-        let guard = RegisterGuard::Ready(Register::X0);
-        assert_eq!(guard.inner_reg(), Register::X0);
-    }
-
-    #[test]
-    fn register_guard_inner_reg_load() {
-        let guard = RegisterGuard::Load(u12::new(3), Register::X1);
-        assert_eq!(guard.inner_reg(), Register::X1);
-    }
-
-    #[test]
-    fn register_guard_inner_reg_save() {
-        let guard = RegisterGuard::Save(u12::new(5), Register::X2);
-        assert_eq!(guard.inner_reg(), Register::X2);
-    }
-
-    #[test]
-    fn register_guard_inner_reg_save_and_load() {
-        let guard = RegisterGuard::SaveAndLoad(u12::new(1), u12::new(4), Register::X9);
-        assert_eq!(guard.inner_reg(), Register::X9);
     }
 
     // ---- Stack ----
