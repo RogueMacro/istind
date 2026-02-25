@@ -44,6 +44,9 @@ integer_literal ::= [0-9]+
 | `}`   | Right curly bracket       |
 | `=`   | Assignment / equality     |
 | `+`   | Addition operator         |
+| `-`   | Subtraction operator      |
+| `*`   | Multiplication operator   |
+| `/`   | Division operator         |
 | `;`   | Statement terminator      |
 
 ---
@@ -75,18 +78,10 @@ A function has a name, an empty parameter list, and a block body. The block body
 **Examples**
 
 ```
-fn main() {}
-```
-
-```
 fn main() {
     return 0;
 }
 ```
-
-### 3.1 Implicit Return
-
-A function with no `return` statement returns implicitly (the return value is implementation-defined).
 
 ---
 
@@ -138,6 +133,9 @@ let b = 3;
 expression ::= integer_literal
              | identifier
              | expression "+" expression
+             | expression "-" expression
+             | expression "*" expression
+             | expression "/" expression
 ```
 
 Expressions are evaluated left-to-right. No explicit operator-precedence grouping syntax (parentheses around expressions) is currently defined.
@@ -178,6 +176,51 @@ Adds two integer values and produces an integer result.
 ```
 a + b
 2 + 3
+```
+
+### 5.4 Subtraction
+
+```
+subtraction_expr ::= expression "-" expression
+```
+
+Subtracts the right operand from the left and produces an integer result.
+
+**Example**
+
+```
+a - b
+7 - 4
+```
+
+### 5.5 Multiplication
+
+```
+multiplication_expr ::= expression "*" expression
+```
+
+Multiplies two integer values and produces an integer result.
+
+**Example**
+
+```
+a * b
+2 * 3
+```
+
+### 5.6 Division
+
+```
+division_expr ::= expression "/" expression
+```
+
+Divides the left operand by the right (integer division) and produces an integer result.
+
+**Example**
+
+```
+a / b
+6 / 2
 ```
 
 ---
