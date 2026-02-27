@@ -11,7 +11,12 @@ fn mod_main() -> Rc<String> {
 
 fn compiles(source: &str) {
     let compiler: Compiler<DummyExecutable> = Compiler::default();
-    compiler.compile_source(mod_main(), source).unwrap();
+    assert!(compiler.compile_source(mod_main(), source).is_ok());
+}
+
+fn fails(source: &str) {
+    let compiler: Compiler<DummyExecutable> = Compiler::default();
+    assert!(compiler.compile_source(mod_main(), source).is_err());
 }
 
 fn runs(test_name: &str, expect_exit_code: i32, source: &str) {
@@ -29,7 +34,7 @@ fn runs(test_name: &str, expect_exit_code: i32, source: &str) {
 
 #[test]
 fn minimal_implicit() {
-    compiles("fn main() {}");
+    fails("fn main() {}");
 }
 
 #[test]
@@ -65,7 +70,7 @@ fn assignment() {
         2,
         "
         fn main() {
-            let a = 2;
+            a := 2;
             return a;
         }
         ",
@@ -79,8 +84,8 @@ fn addition() {
         5,
         "
         fn main() {
-            let a = 2;
-            let b = 3;
+            a := 2;
+            b := 3;
             return a + b;
         }
         ",

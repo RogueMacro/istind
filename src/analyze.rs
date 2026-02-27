@@ -1,5 +1,5 @@
 use std::{
-    fmt::Display,
+    fmt::{self, Display},
     ops::{Deref, Range},
     rc::Rc,
 };
@@ -157,5 +157,11 @@ impl ErrorVec {
 impl From<Error> for ErrorVec {
     fn from(error: Error) -> Self {
         Self(vec![error])
+    }
+}
+
+impl fmt::Debug for ErrorVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to compile due to {} errors", self.0.len())
     }
 }
