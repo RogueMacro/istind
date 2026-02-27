@@ -1,7 +1,7 @@
 use std::{ops::Range, rc::Rc};
 
 use crate::analyze::{
-    Error, ErrorCode, ErrorContext,
+    Error, ErrorCode, ErrorContext, ErrorVec,
     ast::{AST, Expression, Item, Statement},
     lex::{
         Lexer,
@@ -22,7 +22,7 @@ impl Parser {
         }
     }
 
-    pub fn into_ast(mut self) -> Result<AST, Error> {
+    pub fn into_ast(mut self) -> Result<AST, ErrorVec> {
         let mut ast = AST::new();
 
         while self.lexer.current().is_some() {
@@ -30,33 +30,61 @@ impl Parser {
             ast.add_item(item);
         }
 
+        if !self.err_ctx.is_empty() {
+            return Err(self.err_ctx.take_errors());
+        }
+
         Ok(ast)
+    }
+
+    fn find_semicolon(&mut self) -> Result<bool, Error> {
+        while let Some((token, _)) = self.lexer.take_current()? {
+            if matches!(token, Token::Semicolon) {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     fn parse_item(&mut self) -> Result<Item, Error> {
         let (token, range) = self.expect_take_current()?;
         let Token::Keyword(keyword) = token else {
-            return Err(self.err_ctx.unexpected_token(range, "expected keyword"));
+            return Err(self
+                .err_ctx
+                .unexpected_token(range, "expected keyword")
+                .finish());
         };
 
         match keyword {
-            Keyword::Function => self.parse_function(),
-            _ => Err(self.err_ctx.unexpected_token(range, "expected function")),
+            Keyword::Function => self.parse_function(range.start),
+            _ => Err(self
+                .err_ctx
+                .unexpected_token(range, "expected function")
+                .finish()),
         }
     }
 
-    fn parse_function(&mut self) -> Result<Item, Error> {
+    fn parse_function(&mut self, decl_start: usize) -> Result<Item, Error> {
         let (token, range) = self.expect_take_current()?;
-        let Token::Ident(name) = token else {
-            return Err(self
-                .err_ctx
-                .unexpected_token(range, "expected function name"));
+
+        let name = match token {
+            Token::Ident(name) => name,
+            _ => {
+                self.err_ctx
+                    .unexpected_token(range, "expected function name")
+                    .report();
+
+                String::from("???")
+            }
         };
 
         self.expect_next(
             |t| matches!(t, Token::Operator(Operator::LeftParenthesis)),
             "expected opening parenthesis",
         )?;
+
+        let decl_end = self.lexer.cur_token_start();
 
         self.expect_next(
             |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
@@ -65,7 +93,11 @@ impl Parser {
 
         let body = self.parse_block()?;
 
-        Ok(Item::Function { name, body })
+        Ok(Item::Function {
+            name,
+            body,
+            decl_range: decl_start..decl_end,
+        })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>, Error> {
@@ -75,37 +107,93 @@ impl Parser {
         )?;
 
         let mut statements = Vec::new();
-        while let Some((token, range)) = self.lexer.current() {
+        while let Some((token, _)) = self.lexer.current() {
             if matches!(token, Token::Operator(Operator::RightCurlyBracket)) {
                 self.lexer.take_current()?;
                 return Ok(statements);
             }
 
-            let range = range.clone();
-
-            if let Token::Keyword(keyword) = token {
-                let keyword = *keyword;
-                self.lexer.take_current()?;
-                let stmt = self.parse_keyword(keyword, range)?;
-                statements.push(stmt);
-            } else if let Expression::FnCall(function) = self.parse_expr()? {
-                self.expect_semicolon()?;
-                statements.push(Statement::FnCall(function));
-            } else {
-                return Err(self
-                    .err_ctx
-                    .unexpected_token(range.clone(), "this is not in our dictionary"));
+            match self.parse_statement() {
+                Ok(stmt) => statements.push(stmt),
+                Err(err) => {
+                    self.err_ctx.report(err);
+                    self.find_semicolon()?;
+                }
             }
         }
 
-        Err(self.err_ctx.unexpected_eof(self.lexer.index()))
+        Err(self
+            .err_ctx
+            .unexpected_eof(self.lexer.cur_token_start())
+            .finish())
+    }
+
+    fn parse_statement(&mut self) -> Result<Statement, Error> {
+        let (token, range) = self.lexer.current().unwrap().clone();
+
+        if let Token::Keyword(keyword) = token {
+            self.lexer.take_current()?;
+            self.parse_keyword(keyword, range.clone())
+        } else {
+            let var_start = self.lexer.cur_token_start();
+            let expr = self.parse_expr()?;
+            let var_end = self.lexer.last_token_end();
+
+            match self.lexer.take_current()? {
+                Some((Token::Semicolon, _)) => Ok(Statement::Expr(expr)),
+                Some((Token::Operator(Operator::Assign), _)) => {
+                    let Expression::Variable(var) = expr else {
+                        return Err(self
+                            .err_ctx
+                            .build(var_start..var_end)
+                            .with_message("only variables are allowed in assignments")
+                            .finish());
+                    };
+
+                    let rvalue = self.parse_expr()?;
+                    self.expect_semicolon()?;
+                    Ok(Statement::Assign {
+                        var,
+                        expr: rvalue,
+                        var_range: var_start..var_end,
+                    })
+                }
+                Some((Token::Operator(Operator::Declare), _)) => {
+                    let Expression::Variable(var) = expr else {
+                        return Err(self
+                            .err_ctx
+                            .build(var_start..var_end)
+                            .with_message("only variables are allowed in assignments")
+                            .finish());
+                    };
+
+                    let rvalue = self.parse_expr()?;
+                    self.expect_semicolon()?;
+                    Ok(Statement::Declare {
+                        var,
+                        expr: rvalue,
+                        var_range: var_start..var_end,
+                    })
+                }
+                Some((_, range)) => Err(self
+                    .err_ctx
+                    .unexpected_token(range, "expected ';', '=' or ':='")
+                    .finish()),
+                None => Err(self
+                    .err_ctx
+                    .unexpected_eof(self.lexer.cur_token_start())
+                    .finish()),
+            }
+        }
     }
 
     fn parse_keyword(&mut self, keyword: Keyword, range: Range<usize>) -> Result<Statement, Error> {
         match keyword {
             Keyword::Return => self.parse_return(),
-            Keyword::Let => self.parse_declaration(),
-            _ => Err(self.err_ctx.unexpected_token(range, "unexpected keyword")),
+            _ => Err(self
+                .err_ctx
+                .unexpected_token(range, "unexpected keyword")
+                .finish()),
         }
     }
 
@@ -116,39 +204,24 @@ impl Parser {
         Ok(Statement::Return(expr))
     }
 
-    fn parse_declaration(&mut self) -> Result<Statement, Error> {
-        let (token, range) = self.expect_take_current()?;
-        let Token::Ident(var) = token else {
-            return Err(self
-                .err_ctx
-                .unexpected_token(range, "expected variable name"));
-        };
-
-        self.expect_next(
-            |t| matches!(t, Token::Operator(Operator::Equality)),
-            "expected equality operator",
-        )?;
-
-        let expr = self.parse_expr()?;
-        self.expect_semicolon()?;
-
-        Ok(Statement::Declare { var, expr })
-    }
-
     fn parse_expr(&mut self) -> Result<Expression, Error> {
-        let pos = self.lexer.index();
+        let pos = self.lexer.cur_token_start();
         let token = self.lexer.take_current()?;
 
         let expr = match token {
             Some((Token::Number(num), _)) => Expression::Const(num),
             Some((Token::Ident(ident), _)) => self.parse_ident_expr(ident)?,
             Some((_, range)) => {
-                return Err(self.err_ctx.unexpected_token(range, "invalid expression"));
+                return Err(self
+                    .err_ctx
+                    .unexpected_token(range, "invalid expression")
+                    .finish());
             }
             None => {
                 return Err(self
                     .err_ctx
-                    .unexpected_token((pos - 1)..pos, "unexpected end of file"));
+                    .unexpected_token((pos - 1)..pos, "unexpected end of file")
+                    .finish());
             }
         };
 
@@ -192,51 +265,50 @@ impl Parser {
 
             Ok(Expression::FnCall(ident))
         } else {
-            Ok(Expression::Var(ident))
+            Ok(Expression::Variable(ident))
         }
     }
 
-    fn expect_next<F>(&mut self, matches: F, message: impl ToString) -> Result<Token, Error>
+    fn expect_next<F>(&mut self, matches: F, message: impl ToString) -> Result<(), Error>
     where
         F: FnOnce(&Token) -> bool,
     {
         let (token, range) = self.expect_take_current()?;
         if !matches(&token) {
-            return Err(self.err_ctx.unexpected_token(range, message));
+            return Err(self.err_ctx.unexpected_token(range, message).finish());
         }
 
-        Ok(token)
+        Ok(())
     }
 
     fn expect_semicolon(&mut self) -> Result<(), Error> {
         let current = self.lexer.take_current()?;
-        if matches!(current, Some((Token::Semicolon, _))) {
-            Ok(())
-        } else {
-            let pos = current.map(|t| t.1.start).unwrap_or(self.lexer.index());
-            Err(Error::new(
-                self.err_ctx
-                    .build(pos..(pos + 1))
-                    .with_code(ErrorCode::MissingSemicolon)
-                    .with_message("expected semicolon")
-                    .with_label(
-                        self.err_ctx
-                            .label((pos - 1)..pos)
-                            .with_message("insert the semicolon dummy"),
-                    )
-                    .finish(),
-            ))
+        if !matches!(current, Some((Token::Semicolon, _))) {
+            let pos = current
+                .map(|t| t.1.start)
+                .unwrap_or(self.lexer.cur_token_start());
+            self.err_ctx
+                .build(pos..(pos + 1))
+                .with_code(ErrorCode::MissingSemicolon)
+                .with_message("expected semicolon")
+                .with_label((pos - 1)..pos, "insert the semicolon dummy")
+                .report();
         }
+
+        Ok(())
     }
 
     fn expect_take_current(&mut self) -> Result<(Token, Range<usize>), Error> {
         let token = self.lexer.take_current()?;
         match token {
             Some(token) => Ok(token),
-            None => Err(self.err_ctx.unexpected_token(
-                (self.lexer.index() - 1)..self.lexer.index(),
-                "unexpected end of file",
-            )),
+            None => Err(self
+                .err_ctx
+                .unexpected_token(
+                    (self.lexer.cur_token_start() - 1)..self.lexer.cur_token_start(),
+                    "unexpected end of file",
+                )
+                .finish()),
         }
     }
 }

@@ -9,11 +9,14 @@ pub enum Token {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Operator {
+    Declare,
+    Equality,
+
     LeftParenthesis,
     RightParenthesis,
     LeftCurlyBracket,
     RightCurlyBracket,
-    Equality,
+    Assign,
     Plus,
     Minus,
     Star,
@@ -21,17 +24,21 @@ pub enum Operator {
 }
 
 impl Operator {
-    pub fn parse(c: char) -> Option<Self> {
-        let op = match c {
-            '(' => Self::LeftParenthesis,
-            ')' => Self::RightParenthesis,
-            '{' => Self::LeftCurlyBracket,
-            '}' => Self::RightCurlyBracket,
-            '=' => Self::Equality,
-            '+' => Self::Plus,
-            '-' => Self::Minus,
-            '*' => Self::Star,
-            '/' => Self::Slash,
+    pub fn parse(current: char, lookahead: Option<char>) -> Option<(Self, bool)> {
+        let op = match (current, lookahead) {
+            (':', Some('=')) => (Self::Declare, true),
+            ('=', Some('=')) => (Self::Equality, true),
+
+            ('(', _) => (Self::LeftParenthesis, false),
+            (')', _) => (Self::RightParenthesis, false),
+            ('{', _) => (Self::LeftCurlyBracket, false),
+            ('}', _) => (Self::RightCurlyBracket, false),
+            ('=', _) => (Self::Assign, false),
+            ('+', _) => (Self::Plus, false),
+            ('-', _) => (Self::Minus, false),
+            ('*', _) => (Self::Star, false),
+            ('/', _) => (Self::Slash, false),
+
             _ => return None,
         };
 
@@ -43,7 +50,6 @@ impl Operator {
 pub enum Keyword {
     Function,
     Return,
-    Let,
 }
 
 impl Keyword {
@@ -51,7 +57,6 @@ impl Keyword {
         let keyword = match value.as_ref() {
             "fn" => Keyword::Function,
             "return" => Keyword::Return,
-            "let" => Keyword::Let,
             _ => return None,
         };
 

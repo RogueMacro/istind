@@ -1,4 +1,4 @@
-use std::{iter::Peekable, ops::Range, rc::Rc};
+use std::{ops::Range, rc::Rc};
 
 use ariadne::{ColorGenerator, Label, Report, ReportBuilder, ReportKind};
 
@@ -14,6 +14,7 @@ pub struct Lexer {
     color_gen: ColorGenerator,
     code: Vec<char>,
     index: usize,
+    last: Option<(Token, Range<usize>)>,
     current: Option<(Token, Range<usize>)>,
     next: Option<(Token, Range<usize>)>,
 }
@@ -27,6 +28,7 @@ impl Lexer {
             color_gen: ColorGenerator::new(),
             code,
             index: 0,
+            last: None,
             current: None,
             next: None,
         };
@@ -36,8 +38,15 @@ impl Lexer {
         Ok(lexer)
     }
 
-    pub fn index(&self) -> usize {
-        self.index
+    pub fn cur_token_start(&self) -> usize {
+        self.current
+            .as_ref()
+            .map(|(_, r)| r.start)
+            .unwrap_or(self.index)
+    }
+
+    pub fn last_token_end(&self) -> usize {
+        self.last.as_ref().map(|(_, r)| r.end).unwrap_or(self.index)
     }
 
     /// Get current token
@@ -46,9 +55,8 @@ impl Lexer {
     }
 
     pub fn take_current(&mut self) -> Result<Option<(Token, Range<usize>)>, Error> {
-        let cur = self.current.take();
         self.lex_one()?;
-        Ok(cur)
+        Ok(self.last.clone())
     }
 
     /// Lookahead to next token
@@ -58,6 +66,7 @@ impl Lexer {
 
     /// Move on from current token to the next
     pub fn lex_one(&mut self) -> Result<(), Error> {
+        self.last = self.current.take();
         self.current = self.next.take();
         self.next = self.lex_next()?;
         Ok(())
@@ -65,8 +74,6 @@ impl Lexer {
 
     /// Move on and skip the next token
     pub fn lex_two(&mut self) -> Result<(), Error> {
-        // self.current = self.lex_next()?;
-        // self.next = self.lex_next()?;
         self.lex_one()?;
         self.lex_one()?;
         Ok(())
@@ -102,8 +109,8 @@ impl Lexer {
             return Ok(None);
         };
 
-        if let Some(op) = Operator::parse(c) {
-            self.index += 1;
+        if let Some((op, wide_op)) = Operator::parse(c, self.peek_char()) {
+            self.index += if wide_op { 2 } else { 1 };
             return Ok(Some((Token::Operator(op), (self.index - 1)..self.index)));
         }
 

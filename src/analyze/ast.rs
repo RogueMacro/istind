@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 pub mod parse;
 
 #[derive(Default, Debug)]
@@ -17,21 +19,34 @@ impl AST {
 
 #[derive(Debug)]
 pub enum Item {
-    Function { name: String, body: Vec<Statement> },
+    Function {
+        name: String,
+        body: Vec<Statement>,
+        decl_range: Range<usize>,
+    },
 }
 
 #[derive(Debug)]
 pub enum Statement {
-    Declare { var: String, expr: Expression },
-    // Assign { var: String, expr: Expression },
+    Declare {
+        var: String,
+        expr: Expression,
+        var_range: Range<usize>,
+    },
+    Assign {
+        var: String,
+        expr: Expression,
+        var_range: Range<usize>,
+    },
     Return(Expression),
+    Expr(Expression),
     FnCall(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum Expression {
     Const(i64),
-    Var(String),
+    Variable(String),
     Addition(Box<Expression>, Box<Expression>),
     Subtraction(Box<Expression>, Box<Expression>),
     Multiplication(Box<Expression>, Box<Expression>),

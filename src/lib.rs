@@ -3,7 +3,7 @@ use std::{marker::PhantomData, path::Path, rc::Rc};
 use ariadne::Source;
 
 use crate::{
-    analyze::{Error, ast::parse::Parser, lex::Lexer},
+    analyze::{ErrorVec, ast::parse::Parser, lex::Lexer, semantics},
     ir::IR,
     synthesize::{
         arch::{Assemble, MachineCode, arm::ArmAssembler},
@@ -21,7 +21,7 @@ pub struct Compiler<E: Executable> {
 }
 
 impl<E: Executable> Compiler<E> {
-    pub fn compile(&self, path: impl AsRef<Path>, out_path: impl AsRef<Path>) -> Result<(), ()> {
+    pub fn compile(&self, path: impl AsRef<Path>, out_path: impl AsRef<Path>) -> Result<(), usize> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).unwrap();
 
@@ -33,9 +33,9 @@ impl<E: Executable> Compiler<E> {
 
         let code = match self.compile_source(source_name.clone(), &source) {
             Ok(code) => code,
-            Err(e) => {
-                e.eprint((source_name, Source::from(source))).unwrap();
-                return Err(());
+            Err(errors) => {
+                errors.dump(source_name, &Source::from(source));
+                return Err(errors.len());
             }
         };
 
@@ -46,10 +46,13 @@ impl<E: Executable> Compiler<E> {
         Ok(())
     }
 
-    pub fn compile_source(&self, name: Rc<String>, source: &str) -> Result<MachineCode, Error> {
+    pub fn compile_source(&self, name: Rc<String>, source: &str) -> Result<MachineCode, ErrorVec> {
         let lexer = Lexer::new(name.clone(), source)?;
-        let parser = Parser::new(name, lexer);
+
+        let parser = Parser::new(name.clone(), lexer);
+
         let ast = parser.into_ast()?;
+        let ast = semantics::analyze(ast, name)?;
 
         let ir = IR::generate(ast);
 

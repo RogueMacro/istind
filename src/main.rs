@@ -17,6 +17,14 @@ struct Cli {
 fn main() -> Result<(), Error> {
     let args = Cli::parse();
 
+    if let Err(err) = run(args) {
+        eprintln!("{} {}", "error:".bright_red().bold(), err);
+    }
+
+    Ok(())
+}
+
+fn run(args: Cli) -> Result<(), Error> {
     let Some(module) = args.file.file_stem() else {
         return Err(Error::InvalidFile);
     };
@@ -24,8 +32,8 @@ fn main() -> Result<(), Error> {
     let compiler = Compiler::<AppleExecutable>::default();
 
     let start = Instant::now();
-    if compiler.compile(&args.file, target_mod(module)?).is_err() {
-        return Err(Error::CompilationFailed);
+    if let Err(error_count) = compiler.compile(&args.file, target_mod(module)?) {
+        return Err(Error::CompilationFailed(error_count));
     }
     let end = Instant::now();
     let dur = end - start;
@@ -50,8 +58,8 @@ fn main() -> Result<(), Error> {
 enum Error {
     #[error("path is not a compilable file")]
     InvalidFile,
-    #[error("compilation failed")]
-    CompilationFailed,
+    #[error("failed to compile due to {0} errors")]
+    CompilationFailed(usize),
     #[error("io error")]
     Io(#[from] io::Error),
 }

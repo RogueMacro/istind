@@ -1,17 +1,22 @@
 use std::collections::HashMap;
 
 use crate::{
-    analyze::ast::{AST, Expression, Item as AstItem, Statement},
+    analyze::{
+        ast::{Expression, Item as AstItem, Statement},
+        semantics::ValidAST,
+    },
     ir::{BasicBlock, IR, Item, Op, SourceVal, VirtualReg},
 };
 
 impl IR {
-    pub fn generate(ast: AST) -> IR {
+    pub fn generate(ast: ValidAST) -> IR {
+        let ast = ast.0;
+
         let mut items = Vec::new();
 
         for item in ast.items {
             let item = match item {
-                AstItem::Function { name, body } => Item::Function {
+                AstItem::Function { name, body, .. } => Item::Function {
                     name,
                     bb: BlockBuilder::new().build(body),
                 },
@@ -44,7 +49,7 @@ impl BlockBuilder {
 
         for stmt in block {
             match stmt {
-                Statement::Declare { var, expr } => {
+                Statement::Declare { var, expr, .. } | Statement::Assign { var, expr, .. } => {
                     assert!(!self.vregs.contains_key(&var), "variable declared twice");
 
                     let dest = self.get_or_insert_vreg(var);
@@ -54,6 +59,9 @@ impl BlockBuilder {
                 Statement::Return(expr) => {
                     let value = self.unroll_expr(&expr, None);
                     self.ops.push(Op::Return { value });
+                }
+                Statement::Expr(expr) => {
+                    self.unroll_expr(&expr, None);
                 }
                 Statement::FnCall(function) => {
                     self.ops.push(Op::Call {
@@ -70,7 +78,7 @@ impl BlockBuilder {
     fn unroll_expr(&mut self, expr: &Expression, dest: Option<VirtualReg>) -> SourceVal {
         match expr {
             Expression::Const(num) => SourceVal::Immediate(*num),
-            Expression::Var(var) => SourceVal::VReg(self.get_or_insert_vreg(var)),
+            Expression::Variable(var) => SourceVal::VReg(self.get_or_insert_vreg(var)),
             Expression::Addition(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let b = self.unroll_expr(expr2.as_ref(), None);
