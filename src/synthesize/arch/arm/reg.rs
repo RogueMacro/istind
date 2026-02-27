@@ -126,10 +126,6 @@ struct Stack {
 }
 
 impl Stack {
-    pub fn stack_size(&self) -> u12 {
-        self.stack_size
-    }
-
     pub fn alloc(&mut self) -> u12 {
         if let Some(slot) = self.free_slots.pop() {
             slot
@@ -384,10 +380,10 @@ mod tests {
     #[test]
     fn stack_alloc_starts_at_zero() {
         let mut stack = Stack::default();
-        assert_eq!(stack.stack_size(), u12::new(0));
+        assert_eq!(stack.stack_size, u12::new(0));
         let slot = stack.alloc();
         assert_eq!(slot, u12::new(0));
-        assert_eq!(stack.stack_size(), u12::new(1));
+        assert_eq!(stack.stack_size, u12::new(1));
     }
 
     #[test]
@@ -396,7 +392,7 @@ mod tests {
         assert_eq!(stack.alloc(), u12::new(0));
         assert_eq!(stack.alloc(), u12::new(1));
         assert_eq!(stack.alloc(), u12::new(2));
-        assert_eq!(stack.stack_size(), u12::new(3));
+        assert_eq!(stack.stack_size, u12::new(3));
     }
 
     #[test]
@@ -406,11 +402,11 @@ mod tests {
         let _s1 = stack.alloc();
         stack.free(s0);
         // stack_size does not shrink
-        assert_eq!(stack.stack_size(), u12::new(2));
+        assert_eq!(stack.stack_size, u12::new(2));
         // next alloc reuses the freed slot
         let reused = stack.alloc();
         assert_eq!(reused, s0);
-        assert_eq!(stack.stack_size(), u12::new(2));
+        assert_eq!(stack.stack_size, u12::new(2));
     }
 
     #[test]

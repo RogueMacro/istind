@@ -406,7 +406,7 @@ impl Instruction for Sub {
         let dest = self.dest as u32;
 
         match self.b {
-            Input::Reg(reg) => todo!(),
+            Input::Reg(_reg) => todo!(),
             Input::Imm(imm) => {
                 let imm: i16 = imm.into();
                 (0b110100010_0 << 22) | ((imm as u32) << 10) | (a << 5) | dest
