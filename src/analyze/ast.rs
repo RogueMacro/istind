@@ -46,7 +46,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Const(i64),
-    Variable(String),
+    Variable(String, Range<usize>),
     Addition(Box<Expression>, Box<Expression>),
     Subtraction(Box<Expression>, Box<Expression>),
     Multiplication(Box<Expression>, Box<Expression>),

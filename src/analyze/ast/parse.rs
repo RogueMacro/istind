@@ -142,7 +142,7 @@ impl Parser {
             match self.lexer.take_current()? {
                 Some((Token::Semicolon, _)) => Ok(Statement::Expr(expr)),
                 Some((Token::Operator(Operator::Assign), _)) => {
-                    let Expression::Variable(var) = expr else {
+                    let Expression::Variable(var, _) = expr else {
                         return Err(self
                             .err_ctx
                             .build(var_start..var_end)
@@ -159,7 +159,7 @@ impl Parser {
                     })
                 }
                 Some((Token::Operator(Operator::Declare), _)) => {
-                    let Expression::Variable(var) = expr else {
+                    let Expression::Variable(var, _) = expr else {
                         return Err(self
                             .err_ctx
                             .build(var_start..var_end)
@@ -210,7 +210,7 @@ impl Parser {
 
         let expr = match token {
             Some((Token::Number(num), _)) => Expression::Const(num),
-            Some((Token::Ident(ident), _)) => self.parse_ident_expr(ident)?,
+            Some((Token::Ident(ident), range)) => self.parse_ident_expr(ident, range)?,
             Some((_, range)) => {
                 return Err(self
                     .err_ctx
@@ -251,7 +251,11 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_ident_expr(&mut self, ident: String) -> Result<Expression, Error> {
+    fn parse_ident_expr(
+        &mut self,
+        ident: String,
+        range: Range<usize>,
+    ) -> Result<Expression, Error> {
         if matches!(
             self.lexer.current(),
             Some((Token::Operator(Operator::LeftParenthesis), _))
@@ -265,7 +269,7 @@ impl Parser {
 
             Ok(Expression::FnCall(ident))
         } else {
-            Ok(Expression::Variable(ident))
+            Ok(Expression::Variable(ident, range))
         }
     }
 

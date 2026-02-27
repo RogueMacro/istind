@@ -1,8 +1,8 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, ops::Range, rc::Rc};
 
 use crate::analyze::{
     ErrorContext, ErrorVec,
-    ast::{AST, Item, Statement},
+    ast::{AST, Expression, Item, Statement},
 };
 
 pub struct ValidAST(pub AST);
@@ -95,23 +95,54 @@ impl<'ast> Analyzer<'ast> {
                         .with_label(var_range.clone(), "variable already defined")
                         .report();
                 }
+
+                self.expression(expr);
             }
             Statement::Assign {
                 var,
                 expr,
                 var_range,
             } => {
-                if !self.symbols.contains_key(var) {
-                    self.err_ctx
-                        .build(var_range.clone())
-                        .with_message("undeclared variable")
-                        .with_label(var_range.clone(), "this guy doesn't exist")
-                        .report();
-                }
+                self.check_var(var, var_range);
+                self.expression(expr);
             }
-            Statement::Return(expression) => (),
-            Statement::Expr(expression) => (),
+            Statement::Return(expr) => self.expression(expr),
+            Statement::Expr(expr) => self.expression(expr),
             Statement::FnCall(_) => (),
+        }
+    }
+
+    fn expression(&mut self, expr: &Expression) {
+        match expr {
+            Expression::Const(_) => (),
+            Expression::Variable(var, range) => self.check_var(var, range),
+            Expression::Addition(expr1, expr2) => {
+                self.expression(expr1);
+                self.expression(expr2);
+            }
+            Expression::Subtraction(expr1, expr2) => {
+                self.expression(expr1);
+                self.expression(expr2);
+            }
+            Expression::Multiplication(expr1, expr2) => {
+                self.expression(expr1);
+                self.expression(expr2);
+            }
+            Expression::Division(expr1, expr2) => {
+                self.expression(expr1);
+                self.expression(expr2);
+            }
+            Expression::FnCall(_) => todo!(),
+        }
+    }
+
+    fn check_var(&mut self, symbol: &str, range: &Range<usize>) {
+        if !self.symbols.contains_key(symbol) {
+            self.err_ctx
+                .build(range.clone())
+                .with_message("undeclared variable")
+                .with_label(range.clone(), "this guy doesn't exist")
+                .report();
         }
     }
 }
