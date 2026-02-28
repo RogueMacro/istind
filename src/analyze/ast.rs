@@ -44,13 +44,26 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub struct Expression {
+    pub expr_type: ExprType,
+    pub semantic_type: Option<SemanticType>,
+    pub range: Range<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprType {
     Const(i64),
-    Variable(String, Range<usize>),
+    Variable(String),
     Addition(Box<Expression>, Box<Expression>),
     Subtraction(Box<Expression>, Box<Expression>),
     Multiplication(Box<Expression>, Box<Expression>),
     Division(Box<Expression>, Box<Expression>),
 
     FnCall(String),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SemanticType {
+    I64,
+    Char,
 }

@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, rc::Rc};
 
 use crate::analyze::{
     ErrorContext, ErrorVec,
-    ast::{AST, Expression, Item, Statement},
+    ast::{AST, ExprType, Expression, Item, Statement},
 };
 
 pub struct ValidAST(pub AST);
@@ -113,26 +113,26 @@ impl<'ast> Analyzer<'ast> {
     }
 
     fn expression(&mut self, expr: &Expression) {
-        match expr {
-            Expression::Const(_) => (),
-            Expression::Variable(var, range) => self.check_var(var, range),
-            Expression::Addition(expr1, expr2) => {
+        match &expr.expr_type {
+            ExprType::Const(_) => (),
+            ExprType::Variable(var) => self.check_var(var, &expr.range),
+            ExprType::Addition(expr1, expr2) => {
                 self.expression(expr1);
                 self.expression(expr2);
             }
-            Expression::Subtraction(expr1, expr2) => {
+            ExprType::Subtraction(expr1, expr2) => {
                 self.expression(expr1);
                 self.expression(expr2);
             }
-            Expression::Multiplication(expr1, expr2) => {
+            ExprType::Multiplication(expr1, expr2) => {
                 self.expression(expr1);
                 self.expression(expr2);
             }
-            Expression::Division(expr1, expr2) => {
+            ExprType::Division(expr1, expr2) => {
                 self.expression(expr1);
                 self.expression(expr2);
             }
-            Expression::FnCall(_) => todo!(),
+            ExprType::FnCall(_) => todo!(),
         }
     }
 

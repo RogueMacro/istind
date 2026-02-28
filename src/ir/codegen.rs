@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     analyze::{
-        ast::{Expression, Item as AstItem, Statement},
+        ast::{ExprType, Expression, Item as AstItem, Statement},
         semantics::ValidAST,
     },
     ir::{BasicBlock, IR, Item, Op, SourceVal, VirtualReg},
@@ -76,10 +76,10 @@ impl BlockBuilder {
     }
 
     fn unroll_expr(&mut self, expr: &Expression, dest: Option<VirtualReg>) -> SourceVal {
-        match expr {
-            Expression::Const(num) => SourceVal::Immediate(*num),
-            Expression::Variable(var, ..) => SourceVal::VReg(self.get_or_insert_vreg(var)),
-            Expression::Addition(expr1, expr2) => {
+        match &expr.expr_type {
+            ExprType::Const(num) => SourceVal::Immediate(*num),
+            ExprType::Variable(var, ..) => SourceVal::VReg(self.get_or_insert_vreg(var)),
+            ExprType::Addition(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let b = self.unroll_expr(expr2.as_ref(), None);
 
@@ -88,7 +88,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            Expression::Subtraction(expr1, expr2) => {
+            ExprType::Subtraction(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let b = self.unroll_expr(expr2.as_ref(), None);
 
@@ -97,7 +97,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            Expression::Multiplication(expr1, expr2) => {
+            ExprType::Multiplication(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let a = self.src_to_vreg(a);
 
@@ -109,7 +109,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            Expression::Division(expr1, expr2) => {
+            ExprType::Division(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let a = self.src_to_vreg(a);
 
@@ -121,7 +121,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            Expression::FnCall(function) => {
+            ExprType::FnCall(function) => {
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
                 self.ops.push(Op::Call {
                     function: function.clone(),

@@ -2,7 +2,7 @@ use std::{ops::Range, rc::Rc};
 
 use crate::analyze::{
     Error, ErrorCode, ErrorContext, ErrorVec,
-    ast::{AST, Expression, Item, Statement},
+    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
     lex::{
         Lexer,
         token::{Keyword, Operator, Token},
@@ -135,17 +135,15 @@ impl Parser {
             self.lexer.take_current()?;
             self.parse_keyword(keyword, range.clone())
         } else {
-            let var_start = self.lexer.cur_token_start();
             let expr = self.parse_expr()?;
-            let var_end = self.lexer.last_token_end();
 
             match self.lexer.take_current()? {
                 Some((Token::Semicolon, _)) => Ok(Statement::Expr(expr)),
                 Some((Token::Operator(Operator::Assign), _)) => {
-                    let Expression::Variable(var, _) = expr else {
+                    let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
-                            .build(var_start..var_end)
+                            .build(expr.range)
                             .with_message("only variables are allowed in assignments")
                             .finish());
                     };
@@ -155,14 +153,14 @@ impl Parser {
                     Ok(Statement::Assign {
                         var,
                         expr: rvalue,
-                        var_range: var_start..var_end,
+                        var_range: range,
                     })
                 }
                 Some((Token::Operator(Operator::Declare), _)) => {
-                    let Expression::Variable(var, _) = expr else {
+                    let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
-                            .build(var_start..var_end)
+                            .build(expr.range)
                             .with_message("only variables are allowed in assignments")
                             .finish());
                     };
@@ -172,7 +170,7 @@ impl Parser {
                     Ok(Statement::Declare {
                         var,
                         expr: rvalue,
-                        var_range: var_start..var_end,
+                        var_range: range,
                     })
                 }
                 Some((_, range)) => Err(self
@@ -209,7 +207,11 @@ impl Parser {
         let token = self.lexer.take_current()?;
 
         let expr = match token {
-            Some((Token::Number(num), _)) => Expression::Const(num),
+            Some((Token::Number(num), range)) => Expression {
+                expr_type: ExprType::Const(num),
+                semantic_type: Some(SemanticType::I64),
+                range,
+            },
             Some((Token::Ident(ident), range)) => self.parse_ident_expr(ident, range)?,
             Some((_, range)) => {
                 return Err(self
@@ -233,19 +235,26 @@ impl Parser {
         {
             // Better way to pattern match and avoid shadowing?
             let op = *op;
+            let semantic_type = expr.semantic_type;
 
             self.lexer.take_current()?;
             let sub_expr = self.parse_expr()?;
 
-            let expr = match op {
-                Operator::Plus => Expression::Addition(Box::new(expr), Box::new(sub_expr)),
-                Operator::Minus => Expression::Subtraction(Box::new(expr), Box::new(sub_expr)),
-                Operator::Star => Expression::Multiplication(Box::new(expr), Box::new(sub_expr)),
-                Operator::Slash => Expression::Division(Box::new(expr), Box::new(sub_expr)),
+            let range = (expr.range.start)..(sub_expr.range.end);
+
+            let expr_type = match op {
+                Operator::Plus => ExprType::Addition(Box::new(expr), Box::new(sub_expr)),
+                Operator::Minus => ExprType::Subtraction(Box::new(expr), Box::new(sub_expr)),
+                Operator::Star => ExprType::Multiplication(Box::new(expr), Box::new(sub_expr)),
+                Operator::Slash => ExprType::Division(Box::new(expr), Box::new(sub_expr)),
                 _ => unreachable!(),
             };
 
-            return Ok(expr);
+            return Ok(Expression {
+                expr_type,
+                semantic_type,
+                range,
+            });
         }
 
         Ok(expr)
@@ -267,9 +276,17 @@ impl Parser {
                 "expected closing parenthesis",
             )?;
 
-            Ok(Expression::FnCall(ident))
+            Ok(Expression {
+                expr_type: ExprType::FnCall(ident),
+                semantic_type: None,
+                range: (range.start)..(self.lexer.last_token_end()),
+            })
         } else {
-            Ok(Expression::Variable(ident, range))
+            Ok(Expression {
+                expr_type: ExprType::Variable(ident),
+                semantic_type: None,
+                range: (range.start)..(self.lexer.last_token_end()),
+            })
         }
     }
 
