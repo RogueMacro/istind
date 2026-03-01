@@ -21,7 +21,7 @@ impl AST {
 pub enum Item {
     Function {
         name: String,
-        args: Vec<(String, SemanticType)>,
+        args: Vec<(String, SemanticType, Range<usize>)>,
         body: Vec<Statement>,
         ret_type: SemanticType,
         decl_range: Range<usize>,

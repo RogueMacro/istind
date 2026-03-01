@@ -21,7 +21,14 @@ struct Analyzer<'ast> {
     err_ctx: ErrorContext,
 
     variables: HashMap<String, SemanticType>,
-    functions: HashMap<String, (Range<usize>, SemanticType)>,
+    functions: HashMap<
+        String,
+        (
+            Range<usize>,
+            SemanticType,
+            Vec<(Range<usize>, SemanticType)>,
+        ),
+    >,
 }
 
 impl<'ast> Analyzer<'ast> {
@@ -40,12 +47,17 @@ impl<'ast> Analyzer<'ast> {
                 name,
                 ret_type,
                 decl_range,
+                args,
                 ..
             } = item;
-            if let Some((other_decl_range, _)) = self
-                .functions
-                .insert(name.to_owned(), (decl_range.clone(), ret_type.to_owned()))
-            {
+            let args = args
+                .iter()
+                .map(|(_, t, r)| (r.clone(), t.clone()))
+                .collect();
+            if let Some((other_decl_range, _, _)) = self.functions.insert(
+                name.to_owned(),
+                (decl_range.clone(), ret_type.to_owned(), args),
+            ) {
                 self.err_ctx
                     .build(decl_range.clone())
                     .with_message("duplicate function definition")
@@ -77,7 +89,7 @@ impl<'ast> Analyzer<'ast> {
             ret_type,
         } = item;
 
-        for (arg, typ) in args {
+        for (arg, typ, _) in args {
             self.variables.insert(arg.to_owned(), typ.clone());
         }
 
@@ -193,9 +205,33 @@ impl<'ast> Analyzer<'ast> {
                 None
             }
 
-            ExprType::FnCall(function, args /* TODO */) => {
-                if let Some((_, typ)) = self.functions.get(function) {
-                    return Some(typ.clone());
+            ExprType::FnCall(function, call_args) => {
+                let call_types: Vec<(SemanticType, Range<usize>)> = call_args
+                    .iter()
+                    .filter_map(|e| self.expression(e).map(|t| (t, e.range.clone())))
+                    .collect();
+
+                if let Some((_, ret_type, decl_args)) = self.functions.get(function) {
+                    for ((call_type, call_range), (decl_range, decl_type)) in
+                        call_types.iter().zip(decl_args)
+                    {
+                        if call_type != decl_type {
+                            self.err_ctx
+                                .build(call_range.clone())
+                                .with_message("incompatible types")
+                                .with_label(
+                                    call_range.clone(),
+                                    format!("this is of type {}", call_type),
+                                )
+                                .with_label(
+                                    decl_range.clone(),
+                                    format!("function accepts argument of type {}", decl_type),
+                                )
+                                .report();
+                        }
+                    }
+
+                    return Some(ret_type.clone());
                 } else {
                     self.err_ctx
                         .build(expr.range.clone())

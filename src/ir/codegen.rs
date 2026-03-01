@@ -22,7 +22,7 @@ impl IR {
                     let mut block_builder = BlockBuilder::new();
                     let args = args
                         .iter()
-                        .map(|(arg, _)| block_builder.get_or_insert_vreg(arg))
+                        .map(|(arg, _, _)| block_builder.get_or_insert_vreg(arg))
                         .collect();
 
                     Item::Function {
@@ -87,7 +87,7 @@ impl BlockBuilder {
         match &expr.expr_type {
             ExprType::Const(num) => SourceVal::Immediate(*num),
             ExprType::Character(c) => SourceVal::Immediate(*c as i64),
-            ExprType::Variable(var, ..) => SourceVal::VReg(self.get_or_insert_vreg(var)),
+            ExprType::Variable(var, ..) => SourceVal::VReg(self.expect_vreg(var)),
             ExprType::Addition(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let b = self.unroll_expr(expr2.as_ref(), None);
@@ -159,6 +159,13 @@ impl BlockBuilder {
             self.vregs.insert(var.into(), vreg);
             vreg
         }
+    }
+
+    fn expect_vreg(&self, var: &str) -> VirtualReg {
+        *self
+            .vregs
+            .get(var)
+            .expect("undefined variable (compiler bug)")
     }
 
     fn get_vreg(&mut self) -> VirtualReg {

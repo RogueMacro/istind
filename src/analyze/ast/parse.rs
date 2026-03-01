@@ -121,10 +121,12 @@ impl Parser {
         })
     }
 
-    fn parse_decl_args(&mut self) -> Result<Vec<(String, SemanticType)>, Error> {
+    fn parse_decl_args(&mut self) -> Result<Vec<(String, SemanticType, Range<usize>)>, Error> {
         let mut args = Vec::new();
         while let Some((Token::Ident(name), _)) = self.lexer.current() {
             let name = name.to_owned();
+
+            let rstart = self.lexer.cur_token_start();
 
             self.lexer.lex_one()?;
             self.expect_next(
@@ -140,7 +142,9 @@ impl Parser {
                     .finish());
             };
 
-            args.push((name, SemanticType::from(type_str)));
+            let rend = self.lexer.last_token_end();
+
+            args.push((name, SemanticType::from(type_str), rstart..rend));
 
             if !matches!(
                 self.lexer.current(),
