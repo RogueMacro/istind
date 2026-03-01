@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, rc::Rc};
 
 use crate::analyze::{
     ErrorContext, ErrorVec,
-    ast::{AST, ExprType, Expression, Item, Statement},
+    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
 };
 
 pub struct ValidAST(pub AST);
@@ -20,7 +20,7 @@ struct Analyzer<'ast> {
     ast: &'ast AST,
     err_ctx: ErrorContext,
 
-    symbols: HashMap<String, Symbol>,
+    symbols: HashMap<String, (Symbol, SemanticType)>,
 }
 
 impl<'ast> Analyzer<'ast> {
@@ -53,7 +53,7 @@ impl<'ast> Analyzer<'ast> {
 
         if self
             .symbols
-            .insert(name.clone(), Symbol::Function)
+            .insert(name.clone(), (Symbol::Function, SemanticType::Unit))
             .is_some()
         {
             self.err_ctx
@@ -88,15 +88,21 @@ impl<'ast> Analyzer<'ast> {
                 expr,
                 var_range,
             } => {
-                if self.symbols.insert(var.clone(), Symbol::Variable).is_some() {
+                let var_type = self.expression(expr);
+                if self
+                    .symbols
+                    .insert(
+                        var.clone(),
+                        (Symbol::Variable, var_type.unwrap_or(SemanticType::Unit)),
+                    )
+                    .is_some()
+                {
                     self.err_ctx
                         .build(var_range.clone())
                         .with_message("duplicate variable declaration")
                         .with_label(var_range.clone(), "variable already defined")
                         .report();
                 }
-
-                self.expression(expr);
             }
             Statement::Assign {
                 var,
@@ -106,44 +112,56 @@ impl<'ast> Analyzer<'ast> {
                 self.check_var(var, var_range);
                 self.expression(expr);
             }
-            Statement::Return(expr) => self.expression(expr),
-            Statement::Expr(expr) => self.expression(expr),
+            Statement::Return(expr) | Statement::Expr(expr) => {
+                self.expression(expr);
+            }
             Statement::FnCall(_) => (),
         }
     }
 
-    fn expression(&mut self, expr: &Expression) {
+    fn expression(&mut self, expr: &Expression) -> Option<SemanticType> {
         match &expr.expr_type {
-            ExprType::Const(_) => (),
+            ExprType::Const(_) => Some(SemanticType::I64),
+            ExprType::Character(_) => Some(SemanticType::Char),
             ExprType::Variable(var) => self.check_var(var, &expr.range),
-            ExprType::Addition(expr1, expr2) => {
-                self.expression(expr1);
-                self.expression(expr2);
+
+            ExprType::Addition(expr1, expr2)
+            | ExprType::Multiplication(expr1, expr2)
+            | ExprType::Subtraction(expr1, expr2)
+            | ExprType::Division(expr1, expr2) => {
+                if let Some(type1) = self.expression(expr1)
+                    && let Some(type2) = self.expression(expr2)
+                {
+                    if type1 == type2 {
+                        return Some(type1);
+                    }
+
+                    self.err_ctx
+                        .build(expr1.range.start..expr2.range.end)
+                        .with_message("mismatched types")
+                        .with_label(expr1.range.clone(), format!("this is of type {}", type1))
+                        .with_label(expr2.range.clone(), format!("this is of type {}", type2))
+                        .report();
+                }
+
+                None
             }
-            ExprType::Subtraction(expr1, expr2) => {
-                self.expression(expr1);
-                self.expression(expr2);
-            }
-            ExprType::Multiplication(expr1, expr2) => {
-                self.expression(expr1);
-                self.expression(expr2);
-            }
-            ExprType::Division(expr1, expr2) => {
-                self.expression(expr1);
-                self.expression(expr2);
-            }
+
             ExprType::FnCall(_) => todo!(),
         }
     }
 
-    fn check_var(&mut self, symbol: &str, range: &Range<usize>) {
-        if !self.symbols.contains_key(symbol) {
-            self.err_ctx
-                .build(range.clone())
-                .with_message("undeclared variable")
-                .with_label(range.clone(), "this guy doesn't exist")
-                .report();
+    fn check_var(&mut self, symbol: &str, range: &Range<usize>) -> Option<SemanticType> {
+        if let Some((_, typ)) = self.symbols.get(symbol) {
+            return Some(*typ);
         }
+        self.err_ctx
+            .build(range.clone())
+            .with_message("undeclared variable")
+            .with_label(range.clone(), "this guy doesn't exist")
+            .report();
+
+        None
     }
 }
 

@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt, ops::Range};
 
 pub mod parse;
 
@@ -46,14 +46,17 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct Expression {
     pub expr_type: ExprType,
-    pub semantic_type: Option<SemanticType>,
+    // pub semantic_type: SemanticType,
     pub range: Range<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub enum ExprType {
     Const(i64),
+    Character(char),
+
     Variable(String),
+
     Addition(Box<Expression>, Box<Expression>),
     Subtraction(Box<Expression>, Box<Expression>),
     Multiplication(Box<Expression>, Box<Expression>),
@@ -62,8 +65,19 @@ pub enum ExprType {
     FnCall(String),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SemanticType {
+    Unit,
     I64,
     Char,
+}
+
+impl fmt::Display for SemanticType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SemanticType::Unit => write!(f, "()"),
+            SemanticType::I64 => write!(f, "i64"),
+            SemanticType::Char => write!(f, "char"),
+        }
+    }
 }

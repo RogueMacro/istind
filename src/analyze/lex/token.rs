@@ -1,8 +1,12 @@
 #[derive(Debug, Clone)]
 pub enum Token {
     Keyword(Keyword),
+
     Number(i64),
+    Character(char),
+
     Ident(String),
+
     Semicolon,
     Operator(Operator),
 }

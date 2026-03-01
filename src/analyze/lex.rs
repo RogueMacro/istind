@@ -3,20 +3,20 @@ use std::{ops::Range, rc::Rc};
 use ariadne::{ColorGenerator, Label, Report, ReportBuilder, ReportKind};
 
 use crate::analyze::{
-    Error, Span,
+    Error, ErrorContext, Span,
     lex::token::{Keyword, Operator, Token},
 };
 
 pub mod token;
 
 pub struct Lexer {
-    source_name: Rc<String>,
     color_gen: ColorGenerator,
     code: Vec<char>,
     index: usize,
     last: Option<(Token, Range<usize>)>,
     current: Option<(Token, Range<usize>)>,
     next: Option<(Token, Range<usize>)>,
+    err_ctx: ErrorContext,
 }
 
 impl Lexer {
@@ -24,13 +24,13 @@ impl Lexer {
         let code: Vec<char> = code.as_ref().chars().collect();
 
         let mut lexer = Self {
-            source_name,
             color_gen: ColorGenerator::new(),
             code,
             index: 0,
             last: None,
             current: None,
             next: None,
+            err_ctx: ErrorContext::new(source_name),
         };
 
         lexer.lex_two()?;
@@ -127,13 +127,34 @@ impl Lexer {
             return Ok(Some((Token::Semicolon, (self.index - 1)..self.index)));
         }
 
-        Err(Error::new(
-            self.error(self.index, 1)
-                .with_message("unexpected character")
-                .with_code(3)
-                .with_label(self.label(self.index, 1).with_message("what is this?"))
-                .finish(),
-        ))
+        if c == '\'' {
+            self.index += 1;
+            let Some(character) = self.cur_char() else {
+                return Err(self.err_ctx.unexpected_eof(self.index).finish());
+            };
+
+            self.index += 1;
+            if !matches!(self.cur_char(), Some('\'')) {
+                return Err(self
+                    .err_ctx
+                    .unexpected_token(
+                        self.index..(self.index + 1),
+                        format!("expected ' (quote), got '{:?}'", self.cur_char()),
+                    )
+                    .finish());
+            }
+
+            self.index += 1;
+            return Ok(Some((
+                Token::Character(character),
+                (self.index - 3)..self.index,
+            )));
+        }
+
+        Err(self
+            .err_ctx
+            .unexpected_token(self.index..(self.index + 1), "unexpected character")
+            .finish())
     }
 
     fn lex_ascii(&mut self) -> (Token, Range<usize>) {
@@ -176,17 +197,5 @@ impl Lexer {
                 break;
             }
         }
-    }
-
-    fn error(&self, pos: usize, length: usize) -> ReportBuilder<'static, Span> {
-        Report::build(
-            ReportKind::Error,
-            (self.source_name.clone(), pos..(pos + length)),
-        )
-    }
-
-    fn label(&mut self, pos: usize, length: usize) -> Label<Span> {
-        Label::new((self.source_name.clone(), pos..(pos + length)))
-            .with_color(self.color_gen.next())
     }
 }

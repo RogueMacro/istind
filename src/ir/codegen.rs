@@ -78,6 +78,7 @@ impl BlockBuilder {
     fn unroll_expr(&mut self, expr: &Expression, dest: Option<VirtualReg>) -> SourceVal {
         match &expr.expr_type {
             ExprType::Const(num) => SourceVal::Immediate(*num),
+            ExprType::Character(c) => SourceVal::Immediate(*c as i64),
             ExprType::Variable(var, ..) => SourceVal::VReg(self.get_or_insert_vreg(var)),
             ExprType::Addition(expr1, expr2) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);

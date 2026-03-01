@@ -2,7 +2,7 @@ use std::{ops::Range, rc::Rc};
 
 use crate::analyze::{
     Error, ErrorCode, ErrorContext, ErrorVec,
-    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
+    ast::{AST, ExprType, Expression, Item, Statement},
     lex::{
         Lexer,
         token::{Keyword, Operator, Token},
@@ -209,10 +209,13 @@ impl Parser {
         let expr = match token {
             Some((Token::Number(num), range)) => Expression {
                 expr_type: ExprType::Const(num),
-                semantic_type: Some(SemanticType::I64),
                 range,
             },
             Some((Token::Ident(ident), range)) => self.parse_ident_expr(ident, range)?,
+            Some((Token::Character(c), range)) => Expression {
+                expr_type: ExprType::Character(c),
+                range,
+            },
             Some((_, range)) => {
                 return Err(self
                     .err_ctx
@@ -235,7 +238,6 @@ impl Parser {
         {
             // Better way to pattern match and avoid shadowing?
             let op = *op;
-            let semantic_type = expr.semantic_type;
 
             self.lexer.take_current()?;
             let sub_expr = self.parse_expr()?;
@@ -250,11 +252,7 @@ impl Parser {
                 _ => unreachable!(),
             };
 
-            return Ok(Expression {
-                expr_type,
-                semantic_type,
-                range,
-            });
+            return Ok(Expression { expr_type, range });
         }
 
         Ok(expr)
@@ -278,13 +276,11 @@ impl Parser {
 
             Ok(Expression {
                 expr_type: ExprType::FnCall(ident),
-                semantic_type: None,
                 range: (range.start)..(self.lexer.last_token_end()),
             })
         } else {
             Ok(Expression {
                 expr_type: ExprType::Variable(ident),
-                semantic_type: None,
                 range: (range.start)..(self.lexer.last_token_end()),
             })
         }
