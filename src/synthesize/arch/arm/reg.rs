@@ -126,12 +126,12 @@ struct Stack {
 }
 
 impl Stack {
-    pub fn alloc(&mut self) -> u12 {
+    pub fn alloc(&mut self, bytes: u16) -> u12 {
         if let Some(slot) = self.free_slots.pop() {
             slot
         } else {
-            self.stack_size = self.stack_size + u12::new(1);
-            self.stack_size - u12::new(1)
+            self.stack_size = self.stack_size + u12::new(bytes / 4);
+            self.stack_size - u12::new(bytes / 4)
         }
     }
 
@@ -168,8 +168,6 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
         .map(|(vreg, lifetime)| (*vreg, lifetime.end().unwrap() - 1))
         .collect();
 
-    let mut stack_size = u12::new(0);
-
     let mut regmap = RegMap::new();
     let mut stack = Stack::default();
     let mut stack_saves: HashMap<usize, Vec<(Register, u12)>> = HashMap::new();
@@ -182,7 +180,7 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
                 .values_mut()
                 .filter_map(|l| match *l {
                     Location::Register(r) => {
-                        let stack_offset = stack.alloc();
+                        let stack_offset = stack.alloc(8);
                         *l = Location::Stack(stack_offset);
                         Some((r, stack_offset))
                     }
@@ -283,19 +281,19 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
 
                                             location_map.insert(
                                                 furthest_use_vreg,
-                                                Location::Stack(stack_size),
+                                                Location::Stack(stack.alloc(8)),
                                             );
                                             interval.register = Some(reg as u32);
 
-                                            let reg_guard = if let Some(offset) = location {
-                                                RegisterGuard::SaveAndLoad(stack_size, offset, reg)
+                                            if let Some(offset) = location {
+                                                RegisterGuard::SaveAndLoad(
+                                                    stack.alloc(8),
+                                                    offset,
+                                                    reg,
+                                                )
                                             } else {
-                                                RegisterGuard::Save(stack_size, reg)
-                                            };
-
-                                            stack_size = stack_size + u12::new(1);
-
-                                            reg_guard
+                                                RegisterGuard::Save(stack.alloc(8), reg)
+                                            }
                                         }
                                     }
                                 }
@@ -329,7 +327,7 @@ pub fn allocate(bb: &BasicBlock) -> Allocator {
 
     Allocator {
         regmap,
-        stack_size,
+        stack_size: stack.stack_size,
         stack_saves,
     }
 }
@@ -381,7 +379,7 @@ mod tests {
     fn stack_alloc_starts_at_zero() {
         let mut stack = Stack::default();
         assert_eq!(stack.stack_size, u12::new(0));
-        let slot = stack.alloc();
+        let slot = stack.alloc(8);
         assert_eq!(slot, u12::new(0));
         assert_eq!(stack.stack_size, u12::new(1));
     }
@@ -389,22 +387,22 @@ mod tests {
     #[test]
     fn stack_alloc_increments_each_call() {
         let mut stack = Stack::default();
-        assert_eq!(stack.alloc(), u12::new(0));
-        assert_eq!(stack.alloc(), u12::new(1));
-        assert_eq!(stack.alloc(), u12::new(2));
+        assert_eq!(stack.alloc(8), u12::new(0));
+        assert_eq!(stack.alloc(8), u12::new(1));
+        assert_eq!(stack.alloc(8), u12::new(2));
         assert_eq!(stack.stack_size, u12::new(3));
     }
 
     #[test]
     fn stack_free_recycles_slot() {
         let mut stack = Stack::default();
-        let s0 = stack.alloc();
-        let _s1 = stack.alloc();
+        let s0 = stack.alloc(8);
+        let _s1 = stack.alloc(8);
         stack.free(s0);
         // stack_size does not shrink
         assert_eq!(stack.stack_size, u12::new(2));
         // next alloc reuses the freed slot
-        let reused = stack.alloc();
+        let reused = stack.alloc(8);
         assert_eq!(reused, s0);
         assert_eq!(stack.stack_size, u12::new(2));
     }
@@ -420,7 +418,7 @@ mod tests {
     #[should_panic]
     fn stack_double_free_panics() {
         let mut stack = Stack::default();
-        let slot = stack.alloc();
+        let slot = stack.alloc(8);
         stack.free(slot);
         stack.free(slot); // second free of the same slot
     }
