@@ -47,7 +47,7 @@ fn run(args: Cli) -> Result<(), Error> {
 
     std::process::Command::new("otool")
         .arg("-vt")
-        .arg("ctarget/main")
+        .arg("btarget/main")
         .status()
         .expect("program failed");
 
@@ -65,7 +65,7 @@ enum Error {
 }
 
 fn target_mod(module: impl AsRef<Path>) -> Result<PathBuf, Error> {
-    let target_dir = Path::new("ctarget");
+    let target_dir = Path::new("btarget");
     if !target_dir.exists() {
         fs::create_dir(target_dir)?;
     }

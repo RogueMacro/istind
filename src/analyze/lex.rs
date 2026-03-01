@@ -127,6 +127,16 @@ impl Lexer {
             return Ok(Some((Token::Semicolon, (self.index - 1)..self.index)));
         }
 
+        if c == ':' {
+            self.index += 1;
+            return Ok(Some((Token::Colon, (self.index - 1)..self.index)));
+        }
+
+        if c == ',' {
+            self.index += 1;
+            return Ok(Some((Token::Comma, (self.index - 1)..self.index)));
+        }
+
         if c == '\'' {
             self.index += 1;
             let Some(character) = self.cur_char() else {

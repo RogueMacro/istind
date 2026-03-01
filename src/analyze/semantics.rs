@@ -20,7 +20,8 @@ struct Analyzer<'ast> {
     ast: &'ast AST,
     err_ctx: ErrorContext,
 
-    symbols: HashMap<String, (Symbol, SemanticType)>,
+    variables: HashMap<String, SemanticType>,
+    functions: HashMap<String, SemanticType>,
 }
 
 impl<'ast> Analyzer<'ast> {
@@ -28,11 +29,32 @@ impl<'ast> Analyzer<'ast> {
         Self {
             ast,
             err_ctx: ErrorContext::new(source_name),
-            symbols: HashMap::new(),
+            variables: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
     pub fn analyze(&mut self) -> Result<(), ErrorVec> {
+        for item in &self.ast.items {
+            let Item::Function {
+                name,
+                ret_type,
+                decl_range,
+                ..
+            } = item;
+            if self
+                .functions
+                .insert(name.to_owned(), ret_type.to_owned())
+                .is_some()
+            {
+                self.err_ctx
+                    .build(decl_range.clone())
+                    .with_message("duplicate function definition")
+                    .with_label(decl_range.clone(), "already defined")
+                    .report();
+            }
+        }
+
         for item in &self.ast.items {
             self.item(item);
         }
@@ -45,22 +67,20 @@ impl<'ast> Analyzer<'ast> {
     }
 
     fn item(&mut self, item: &Item) {
+        self.variables.clear();
+
         let Item::Function {
             name,
+            args,
             body,
             decl_range,
+            ..
         } = item;
 
-        if self
-            .symbols
-            .insert(name.clone(), (Symbol::Function, SemanticType::Unit))
-            .is_some()
-        {
-            self.err_ctx
-                .build(decl_range.clone())
-                .with_message("duplicate function definition")
-                .with_label(decl_range.clone(), "already defined")
-                .report();
+        if let Some(args) = args {
+            for (arg, typ) in args {
+                self.variables.insert(arg.to_owned(), typ.clone());
+            }
         }
 
         let mut has_return = false;
@@ -90,11 +110,8 @@ impl<'ast> Analyzer<'ast> {
             } => {
                 let var_type = self.expression(expr);
                 if self
-                    .symbols
-                    .insert(
-                        var.clone(),
-                        (Symbol::Variable, var_type.unwrap_or(SemanticType::Unit)),
-                    )
+                    .variables
+                    .insert(var.clone(), var_type.unwrap_or(SemanticType::Unit))
                     .is_some()
                 {
                     self.err_ctx
@@ -109,13 +126,27 @@ impl<'ast> Analyzer<'ast> {
                 expr,
                 var_range,
             } => {
-                self.check_var(var, var_range);
-                self.expression(expr);
+                let assign_type = self.expression(expr);
+                let decl_type = self.check_var(var, var_range);
+
+                if let Some(assign_type) = assign_type
+                    && let Some(decl_type) = decl_type
+                    && assign_type != decl_type
+                {
+                    self.err_ctx
+                        .build(var_range.start..expr.range.end)
+                        .with_message("mismatched types")
+                        .with_label(var_range.clone(), format!("this is of type {}", decl_type))
+                        .with_label(
+                            expr.range.clone(),
+                            format!("this is of type {}", assign_type),
+                        )
+                        .report();
+                }
             }
             Statement::Return(expr) | Statement::Expr(expr) => {
                 self.expression(expr);
             }
-            Statement::FnCall(_) => (),
         }
     }
 
@@ -147,14 +178,30 @@ impl<'ast> Analyzer<'ast> {
                 None
             }
 
-            ExprType::FnCall(_) => todo!(),
+            ExprType::FnCall(function, args /* TODO */) => {
+                if let Some(typ) = self.functions.get(function) {
+                    return Some(typ.clone());
+                } else {
+                    self.err_ctx
+                        .build(expr.range.clone())
+                        .with_message("invalid function call")
+                        .with_label(
+                            expr.range.clone(),
+                            format!("{} is not a function", function),
+                        )
+                        .report();
+                }
+
+                None
+            }
         }
     }
 
     fn check_var(&mut self, symbol: &str, range: &Range<usize>) -> Option<SemanticType> {
-        if let Some((_, typ)) = self.symbols.get(symbol) {
-            return Some(*typ);
+        if let Some(typ) = self.variables.get(symbol) {
+            return Some(typ.clone());
         }
+
         self.err_ctx
             .build(range.clone())
             .with_message("undeclared variable")
@@ -163,9 +210,4 @@ impl<'ast> Analyzer<'ast> {
 
         None
     }
-}
-
-enum Symbol {
-    Variable,
-    Function,
 }

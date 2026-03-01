@@ -63,12 +63,6 @@ impl BlockBuilder {
                 Statement::Expr(expr) => {
                     self.unroll_expr(&expr, None);
                 }
-                Statement::FnCall(function) => {
-                    self.ops.push(Op::Call {
-                        function,
-                        dest: None,
-                    });
-                }
             }
         }
 
@@ -122,7 +116,7 @@ impl BlockBuilder {
 
                 SourceVal::VReg(dest)
             }
-            ExprType::FnCall(function) => {
+            ExprType::FnCall(function, args) => {
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
                 self.ops.push(Op::Call {
                     function: function.clone(),

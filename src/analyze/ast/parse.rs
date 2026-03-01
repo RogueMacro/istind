@@ -2,7 +2,7 @@ use std::{ops::Range, rc::Rc};
 
 use crate::analyze::{
     Error, ErrorCode, ErrorContext, ErrorVec,
-    ast::{AST, ExprType, Expression, Item, Statement},
+    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
     lex::{
         Lexer,
         token::{Keyword, Operator, Token},
@@ -84,20 +84,77 @@ impl Parser {
             "expected opening parenthesis",
         )?;
 
+        let args = if let Some((Token::Ident(_), range)) = self.lexer.current() {
+            Some(self.parse_decl_args()?)
+        } else {
+            None
+        };
+
         let decl_end = self.lexer.cur_token_start();
 
         self.expect_next(
             |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
-            "expected closing parenthesis",
+            "expected argument or closing parenthesis",
         )?;
+
+        let ret_type = match self.lexer.current() {
+            Some((Token::Operator(Operator::Arrow), _)) => {
+                self.lexer.lex_one()?;
+                let (token, range) = self.expect_take_current()?;
+                if let Token::Ident(ret_typ_str) = token {
+                    SemanticType::from(ret_typ_str)
+                } else {
+                    self.err_ctx
+                        .unexpected_token(range, "expected return type")
+                        .report();
+
+                    SemanticType::Unit
+                }
+            }
+            _ => SemanticType::Unit,
+        };
 
         let body = self.parse_block()?;
 
         Ok(Item::Function {
             name,
+            args,
             body,
+            ret_type,
             decl_range: decl_start..decl_end,
         })
+    }
+
+    fn parse_decl_args(&mut self) -> Result<Vec<(String, SemanticType)>, Error> {
+        let mut args = Vec::new();
+        while let Some((Token::Ident(name), _)) = self.lexer.current() {
+            let name = name.to_owned();
+
+            self.lexer.lex_one()?;
+            self.expect_next(
+                |t| matches!(t, Token::Colon),
+                "expected colon and argument type",
+            )?;
+
+            let (type_token, range) = self.expect_take_current()?;
+            let Token::Ident(type_str) = type_token else {
+                return Err(self
+                    .err_ctx
+                    .unexpected_token(range, "expected argument type")
+                    .finish());
+            };
+
+            args.push((name, SemanticType::from(type_str)));
+
+            if !matches!(
+                self.lexer.current(),
+                Some((Token::Operator(Operator::RightParenthesis), _))
+            ) {
+                self.expect_next(|t| matches!(t, Token::Comma), "expected comma")?;
+            }
+        }
+
+        Ok(args)
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>, Error> {
@@ -269,13 +326,15 @@ impl Parser {
         ) {
             self.lexer.take_current()?;
 
+            let args = self.parse_call_args()?;
+
             self.expect_next(
                 |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
                 "expected closing parenthesis",
             )?;
 
             Ok(Expression {
-                expr_type: ExprType::FnCall(ident),
+                expr_type: ExprType::FnCall(ident, args),
                 range: (range.start)..(self.lexer.last_token_end()),
             })
         } else {
@@ -284,6 +343,19 @@ impl Parser {
                 range: (range.start)..(self.lexer.last_token_end()),
             })
         }
+    }
+
+    fn parse_call_args(&mut self) -> Result<Vec<Expression>, Error> {
+        let mut args = Vec::new();
+        while !matches!(
+            self.lexer.current(),
+            Some((Token::Operator(Operator::RightParenthesis), _))
+        ) {
+            let expr = self.parse_expr()?;
+            args.push(expr);
+        }
+
+        Ok(args)
     }
 
     fn expect_next<F>(&mut self, matches: F, message: impl ToString) -> Result<(), Error>

@@ -8,6 +8,8 @@ pub enum Token {
     Ident(String),
 
     Semicolon,
+    Colon,
+    Comma,
     Operator(Operator),
 }
 
@@ -15,6 +17,7 @@ pub enum Token {
 pub enum Operator {
     Declare,
     Equality,
+    Arrow,
 
     LeftParenthesis,
     RightParenthesis,
@@ -32,6 +35,7 @@ impl Operator {
         let op = match (current, lookahead) {
             (':', Some('=')) => (Self::Declare, true),
             ('=', Some('=')) => (Self::Equality, true),
+            ('-', Some('>')) => (Self::Arrow, true),
 
             ('(', _) => (Self::LeftParenthesis, false),
             (')', _) => (Self::RightParenthesis, false),

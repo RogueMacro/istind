@@ -21,7 +21,9 @@ impl AST {
 pub enum Item {
     Function {
         name: String,
+        args: Option<Vec<(String, SemanticType)>>,
         body: Vec<Statement>,
+        ret_type: SemanticType,
         decl_range: Range<usize>,
     },
 }
@@ -40,7 +42,6 @@ pub enum Statement {
     },
     Return(Expression),
     Expr(Expression),
-    FnCall(String),
 }
 
 #[derive(Debug, Clone)]
@@ -62,14 +63,15 @@ pub enum ExprType {
     Multiplication(Box<Expression>, Box<Expression>),
     Division(Box<Expression>, Box<Expression>),
 
-    FnCall(String),
+    FnCall(String, Vec<Expression>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SemanticType {
     Unit,
     I64,
     Char,
+    UserType(String),
 }
 
 impl fmt::Display for SemanticType {
@@ -78,6 +80,18 @@ impl fmt::Display for SemanticType {
             SemanticType::Unit => write!(f, "()"),
             SemanticType::I64 => write!(f, "i64"),
             SemanticType::Char => write!(f, "char"),
+            SemanticType::UserType(typ) => write!(f, "{}", typ),
+        }
+    }
+}
+
+impl<S: AsRef<str>> From<S> for SemanticType {
+    fn from(string: S) -> Self {
+        match string.as_ref() {
+            "()" => Self::Unit,
+            "i64" => Self::I64,
+            "char" => Self::Char,
+            name => Self::UserType(name.to_owned()),
         }
     }
 }
