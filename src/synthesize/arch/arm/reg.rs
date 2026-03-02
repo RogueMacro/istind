@@ -497,8 +497,8 @@ mod tests {
                 dest: VirtualReg(1),
             },
             Operation::Add {
-                a: SourceVal::VReg(VirtualReg(0)),
-                b: SourceVal::VReg(VirtualReg(1)),
+                a: VirtualReg(0),
+                b: VirtualReg(1),
                 dest: VirtualReg(2),
             },
             Operation::Return {

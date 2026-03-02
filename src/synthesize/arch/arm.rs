@@ -248,56 +248,26 @@ impl<'c> OpEmitter<'c> {
         }
     }
 
-    fn emit_add(&mut self, a: SourceVal, b: SourceVal, dest: VirtualReg, idx: usize) {
+    fn emit_add(&mut self, a: VirtualReg, b: VirtualReg, dest: VirtualReg, idx: usize) {
         let dest = self.map_reg(dest, idx);
-        match (a, b) {
-            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.asm.emit_movz(a + b, dest),
-            (SourceVal::Immediate(n), SourceVal::VReg(vreg))
-            | (SourceVal::VReg(vreg), SourceVal::Immediate(n)) => {
-                assert!(n <= i16::MAX as i64);
-                let a = self.map_reg(vreg, idx);
-                self.asm.emit(instr::Add {
-                    a,
-                    b: instr::Input::Imm(i12::new(n as i16)),
-                    dest,
-                });
-            }
-            (SourceVal::VReg(a), SourceVal::VReg(b)) => {
-                let a = self.map_reg(a, idx);
-                let b = self.map_reg(b, idx);
-                self.asm.emit(instr::Add {
-                    a,
-                    b: instr::Input::Reg(b),
-                    dest,
-                })
-            }
-        }
+        let a = self.map_reg(a, idx);
+        let b = self.map_reg(b, idx);
+        self.asm.emit(instr::Add {
+            a,
+            b: instr::Input::Reg(b),
+            dest,
+        });
     }
 
-    fn emit_sub(&mut self, a: SourceVal, b: SourceVal, dest: VirtualReg, idx: usize) {
+    fn emit_sub(&mut self, a: VirtualReg, b: VirtualReg, dest: VirtualReg, idx: usize) {
         let dest = self.map_reg(dest, idx);
-        match (a, b) {
-            (SourceVal::Immediate(a), SourceVal::Immediate(b)) => self.asm.emit_movz(a - b, dest),
-            (SourceVal::Immediate(n), SourceVal::VReg(vreg))
-            | (SourceVal::VReg(vreg), SourceVal::Immediate(n)) => {
-                assert!(n <= i16::MAX as i64);
-                let a = self.map_reg(vreg, idx);
-                self.asm.emit(instr::Sub {
-                    a,
-                    b: instr::Input::Imm(i12::new(n as i16)),
-                    dest,
-                });
-            }
-            (SourceVal::VReg(a), SourceVal::VReg(b)) => {
-                let a = self.map_reg(a, idx);
-                let b = self.map_reg(b, idx);
-                self.asm.emit(instr::Sub {
-                    a,
-                    b: instr::Input::Reg(b),
-                    dest,
-                })
-            }
-        }
+        let a = self.map_reg(a, idx);
+        let b = self.map_reg(b, idx);
+        self.asm.emit(instr::Sub {
+            a,
+            b: instr::Input::Reg(b),
+            dest,
+        });
     }
 
     fn emit_mul(&mut self, a: VirtualReg, b: VirtualReg, dest: VirtualReg, idx: usize) {
