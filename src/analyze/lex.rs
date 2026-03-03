@@ -65,6 +65,10 @@ impl Lexer {
         self.last = self.current.take();
         self.current = self.next.take();
         self.next = self.lex_next()?;
+
+        if let Some((t, _)) = self.current.as_ref() {
+            println!("[lex] {:?}", t);
+        }
         Ok(())
     }
 

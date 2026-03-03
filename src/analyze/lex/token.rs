@@ -59,6 +59,7 @@ impl Operator {
 pub enum Keyword {
     Function,
     Return,
+    If,
 }
 
 impl Keyword {
@@ -66,6 +67,7 @@ impl Keyword {
         let keyword = match value.as_ref() {
             "fn" => Keyword::Function,
             "return" => Keyword::Return,
+            "if" => Keyword::If,
             _ => return None,
         };
 

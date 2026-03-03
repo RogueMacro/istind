@@ -25,16 +25,26 @@ impl Parser {
     pub fn into_ast(mut self) -> Result<AST, ErrorVec> {
         let mut ast = AST::new();
 
+        let result = self.parse(&mut ast);
+        let mut errors = self.err_ctx.take_errors();
+        if let Err(err) = result {
+            errors.0.push(err);
+        }
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(ast)
+    }
+
+    fn parse(&mut self, ast: &mut AST) -> Result<(), Error> {
         while self.lexer.current().is_some() {
             let item = self.parse_item()?;
             ast.add_item(item);
         }
 
-        if !self.err_ctx.is_empty() {
-            return Err(self.err_ctx.take_errors());
-        }
-
-        Ok(ast)
+        Ok(())
     }
 
     fn find_semicolon(&mut self) -> Result<bool, Error> {
@@ -173,6 +183,7 @@ impl Parser {
             match self.parse_statement() {
                 Ok(stmt) => statements.push(stmt),
                 Err(err) => {
+                    println!("stmt error: {:?}", err);
                     self.err_ctx.report(err);
                     self.find_semicolon()?;
                 }
@@ -187,6 +198,7 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
         let (token, range) = self.lexer.current().unwrap().clone();
+        println!("stmt: {:?}", token);
 
         if let Token::Keyword(keyword) = token {
             self.lexer.take_current()?;
@@ -268,7 +280,6 @@ impl Parser {
                 Operator::Plus | Operator::Minus | Operator::Star | Operator::Slash
             )
         {
-            // Better way to pattern match and avoid shadowing?
             let mut op = *op;
 
             let left_bind_power = match op {
@@ -287,8 +298,6 @@ impl Parser {
                 },
                 _ => None,
             };
-
-            // println!("left: {} / right: {}", left_bind_power, right_bind_power);
 
             let rhs = if let Some((right_bind_power, next_op)) = right_side
                 && right_bind_power < left_bind_power
