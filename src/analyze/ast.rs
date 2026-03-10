@@ -1,5 +1,13 @@
 use std::{fmt, ops::Range};
 
+use crate::{
+    analyze::{
+        lex::token::Operator,
+        semantics::{SemanticType, Sign},
+    },
+    ir::Condition,
+};
+
 pub mod parse;
 
 #[derive(Default, Debug)]
@@ -40,6 +48,10 @@ pub enum Statement {
         expr: Expression,
         var_range: Range<usize>,
     },
+    If {
+        guard: Expression,
+        body: Vec<Statement>,
+    },
     Return(Expression),
     Expr(Expression),
 }
@@ -47,7 +59,6 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct Expression {
     pub expr_type: ExprType,
-    // pub semantic_type: SemanticType,
     pub range: Range<usize>,
 }
 
@@ -59,43 +70,30 @@ pub enum ExprType {
 
     Variable(String),
 
-    Addition(Box<Expression>, Box<Expression>),
-    Subtraction(Box<Expression>, Box<Expression>),
-    Multiplication(Box<Expression>, Box<Expression>),
-    Division(Box<Expression>, Box<Expression>),
+    Arithmetic(Box<Expression>, Box<Expression>, ArithmeticOp, Option<Sign>),
+    Comparison(Box<Expression>, Box<Expression>, CompareOp, Option<Sign>),
 
+    // Addition(Box<Expression>, Box<Expression>),
+    // Subtraction(Box<Expression>, Box<Expression>),
+    // Multiplication(Box<Expression>, Box<Expression>),
+    // Division(Box<Expression>, Box<Expression>),
     FnCall(String, Vec<Expression>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum SemanticType {
-    Unit,
-    I64,
-    Char,
-    Bool,
-    UserType(String),
+#[derive(Debug, Clone, Copy)]
+pub enum ArithmeticOp {
+    Add,
+    Sub,
+    Mult,
+    Div,
 }
 
-impl fmt::Display for SemanticType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SemanticType::Unit => write!(f, "()"),
-            SemanticType::I64 => write!(f, "i64"),
-            SemanticType::Char => write!(f, "char"),
-            SemanticType::Bool => write!(f, "bool"),
-            SemanticType::UserType(typ) => write!(f, "{}", typ),
-        }
-    }
-}
-
-impl<S: AsRef<str>> From<S> for SemanticType {
-    fn from(string: S) -> Self {
-        match string.as_ref() {
-            "()" => Self::Unit,
-            "i64" => Self::I64,
-            "char" => Self::Char,
-            "bool" => Self::Bool,
-            name => Self::UserType(name.to_owned()),
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum CompareOp {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
 }

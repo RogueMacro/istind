@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use num_traits::FromPrimitive;
-use ux::{i7, i12, i26, u12};
+use ux::{i7, i12, i19, i26, u12};
 
 use crate::{
-    ir::{IR, Item, Operation, SourceVal, VirtualReg},
+    ir::{Condition, IR, Item, Label, OpIndex, Operation, SourceVal, VirtualReg},
     synthesize::arch::{
         Assemble, MachineCode,
         arm::{
@@ -20,6 +20,8 @@ pub mod reg;
 // const MAX_EXIT_CODE: u16 = 255; // On UNIX
 
 const MAIN_FN: &str = "main";
+
+type InstrIndex = usize;
 
 #[derive(Default)]
 pub struct ArmAssembler {
@@ -37,7 +39,7 @@ impl Assemble for ArmAssembler {
             asm.asm_item(item);
         }
 
-        let mut emitter = OpEmitter::new(&mut asm, Allocator::default());
+        let mut emitter = ScopedEmitter::new(&mut asm, Allocator::default(), HashMap::new());
         emitter.emit_call(MAIN_FN.to_owned(), vec![], None, 0);
 
         asm.emit(instr::Movz {
@@ -86,14 +88,15 @@ impl ArmAssembler {
         self.functions.insert(name.clone(), self.current_offset());
 
         let alloc = reg::allocate(&bb, &args);
-        alloc.print_debug();
 
         self.begin_stack(alloc.stack_size());
 
-        let mut emitter = OpEmitter::new(self, alloc);
+        let mut emitter = ScopedEmitter::new(self, alloc, bb.labels);
         for (idx, op) in bb.ops.into_iter().enumerate() {
             emitter.asm_op(op, idx);
         }
+
+        emitter.end();
     }
 
     fn begin_stack(&mut self, stack_size: u12) {
@@ -169,27 +172,59 @@ impl ArmAssembler {
     }
 }
 
-struct OpEmitter<'c> {
+type LazyEmit = Box<dyn FnOnce(&mut ScopedEmitter)>;
+
+struct ScopedEmitter<'c> {
     asm: &'c mut ArmAssembler,
     alloc: Allocator,
+    ir_labels: HashMap<OpIndex, Vec<Label>>,
+    mapped_labels: HashMap<Label, InstrIndex>,
+    lazy_emits: Vec<LazyEmit>,
 }
 
-impl<'c> OpEmitter<'c> {
-    pub fn new(asm: &'c mut ArmAssembler, alloc: Allocator) -> Self {
-        Self { asm, alloc }
+impl<'c> ScopedEmitter<'c> {
+    pub fn new(
+        asm: &'c mut ArmAssembler,
+        alloc: Allocator,
+        ir_labels: HashMap<OpIndex, Vec<Label>>,
+    ) -> Self {
+        Self {
+            asm,
+            alloc,
+            ir_labels,
+            mapped_labels: HashMap::new(),
+            lazy_emits: Vec::new(),
+        }
     }
 
     fn map_reg(&mut self, vreg: VirtualReg, instr_index: usize) -> Register {
         self.alloc.map(vreg, instr_index).unwrap(self.asm)
     }
 
-    fn asm_op(&mut self, op: Operation, idx: usize) {
+    fn asm_op(&mut self, op: Operation, idx: OpIndex) {
+        if let Some(labels) = self.ir_labels.get(&idx) {
+            for label in labels {
+                self.mapped_labels.insert(*label, self.asm.current_offset());
+                println!(
+                    "inserted label {} at {} (op: {:?}",
+                    label,
+                    self.asm.current_offset() / 4,
+                    op
+                );
+            }
+        }
+
         match op {
             Operation::Assign { src, dest } => self.emit_assign(src, dest, idx),
+
             Operation::Add { a, b, dest } => self.emit_add(a, b, dest, idx),
             Operation::Subtract { a, b, dest } => self.emit_sub(a, b, dest, idx),
             Operation::Multiply { a, b, dest } => self.emit_mul(a, b, dest, idx),
             Operation::Divide { a, b, dest } => self.emit_div(a, b, dest, idx),
+
+            Operation::Compare { a, b, cond, dest } => self.emit_cmp(a, b, cond, dest, idx),
+            Operation::BranchIfFalse { cond, label } => self.emit_branch_if_false(cond, label, idx),
+
             Operation::Return { value } => self.emit_return(value, idx),
             Operation::Call {
                 function,
@@ -289,6 +324,48 @@ impl<'c> OpEmitter<'c> {
         });
     }
 
+    fn emit_cmp(
+        &mut self,
+        a: VirtualReg,
+        b: VirtualReg,
+        cond: Condition,
+        dest: VirtualReg,
+        idx: usize,
+    ) {
+        let a = self.map_reg(a, idx);
+        let b = self.map_reg(b, idx);
+        let dest = self.map_reg(dest, idx);
+
+        self.asm.emit(instr::Cmp { a, b });
+        self.asm.emit(instr::BranchCond {
+            cond,
+            offset: i19::new(3),
+        });
+        self.asm.emit_movz(1, dest);
+        self.asm.emit(instr::Branch {
+            offset: i26::new(2),
+        });
+        self.asm.emit_movz(0, dest);
+    }
+
+    fn emit_branch_if_false(&mut self, cond: VirtualReg, label: Label, idx: OpIndex) {
+        let cond = self.map_reg(cond, idx);
+
+        let instr_idx = self.asm.current_offset();
+        self.asm.emit_nop();
+
+        self.lazy_emits.push(Box::new(move |emitter| {
+            let jump_idx = emitter.mapped_labels.get(&label).unwrap();
+            emitter.asm.emit_at(
+                instr_idx,
+                instr::BranchZero {
+                    addr: i19::new((jump_idx - instr_idx) as i32 / 4),
+                    reg: cond,
+                },
+            )
+        }));
+    }
+
     fn emit_return(&mut self, src: SourceVal, idx: usize) {
         match src {
             SourceVal::Immediate(n) => self.asm.emit_movz(n, Reg::X0),
@@ -300,5 +377,11 @@ impl<'c> OpEmitter<'c> {
 
         self.asm.end_stack();
         self.asm.emit(instr::Ret);
+    }
+
+    pub fn end(mut self) {
+        for lazy_emit in std::mem::take(&mut self.lazy_emits) {
+            lazy_emit(&mut self);
+        }
     }
 }

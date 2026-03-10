@@ -66,9 +66,6 @@ impl Lexer {
         self.current = self.next.take();
         self.next = self.lex_next()?;
 
-        if let Some((t, _)) = self.current.as_ref() {
-            println!("[lex] {:?}", t);
-        }
         Ok(())
     }
 
@@ -109,9 +106,27 @@ impl Lexer {
             return Ok(None);
         };
 
-        if let Some((op, wide_op)) = Operator::parse(c, self.peek_char()) {
-            self.index += if wide_op { 2 } else { 1 };
-            return Ok(Some((Token::Operator(op), (self.index - 1)..self.index)));
+        let token_atom = Token::parse_atom(c, self.peek_char());
+        let op = Operator::parse(c, self.peek_char());
+
+        match (token_atom, op) {
+            (Some((token, true)), _) => {
+                self.index += 2;
+                return Ok(Some((token, (self.index - 2)..self.index)));
+            }
+            (_, Some((op, true))) => {
+                self.index += 2;
+                return Ok(Some((Token::Operator(op), (self.index - 2)..self.index)));
+            }
+            (Some((token, false)), _) => {
+                self.index += 1;
+                return Ok(Some((token, (self.index - 1)..self.index)));
+            }
+            (_, Some((op, false))) => {
+                self.index += 1;
+                return Ok(Some((Token::Operator(op), (self.index - 1)..self.index)));
+            }
+            _ => (),
         }
 
         if c.is_ascii_alphabetic() || c == '_' {
@@ -120,21 +135,6 @@ impl Lexer {
 
         if c.is_ascii_digit() {
             return Ok(Some(self.lex_number()));
-        }
-
-        if c == ';' {
-            self.index += 1;
-            return Ok(Some((Token::Semicolon, (self.index - 1)..self.index)));
-        }
-
-        if c == ':' {
-            self.index += 1;
-            return Ok(Some((Token::Colon, (self.index - 1)..self.index)));
-        }
-
-        if c == ',' {
-            self.index += 1;
-            return Ok(Some((Token::Comma, (self.index - 1)..self.index)));
         }
 
         if c == '\'' {

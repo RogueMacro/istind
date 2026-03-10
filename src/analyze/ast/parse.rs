@@ -1,12 +1,16 @@
 use std::{ops::Range, rc::Rc};
 
-use crate::analyze::{
-    Error, ErrorCode, ErrorContext, ErrorVec,
-    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
-    lex::{
-        Lexer,
-        token::{Keyword, Operator, Token},
+use crate::{
+    analyze::{
+        Error, ErrorCode, ErrorContext, ErrorVec,
+        ast::{AST, ArithmeticOp, CompareOp, ExprType, Expression, Item, SemanticType, Statement},
+        lex::{
+            Lexer,
+            token::{Keyword, Operator, Token},
+        },
+        semantics::Sign,
     },
+    ir::Condition,
 };
 
 pub struct Parser {
@@ -89,20 +93,17 @@ impl Parser {
             }
         };
 
-        self.expect_next(
-            |t| matches!(t, Token::Operator(Operator::LeftParenthesis)),
-            "expected opening parenthesis",
-        )?;
+        self.expect_token(Token::LeftParenthesis, "expected opening parenthesis")?;
 
         let args = self.parse_decl_args()?;
 
-        self.expect_next(
-            |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
+        self.expect_token(
+            Token::RightParenthesis,
             "expected argument or closing parenthesis",
         )?;
 
         let ret_type = match self.lexer.current() {
-            Some((Token::Operator(Operator::Arrow), _)) => {
+            Some((Token::Arrow, _)) => {
                 self.lexer.lex_one()?;
                 let (token, range) = self.expect_take_current()?;
                 if let Token::Ident(ret_typ_str) = token {
@@ -139,7 +140,7 @@ impl Parser {
             let rstart = self.lexer.cur_token_start();
 
             self.lexer.lex_one()?;
-            self.expect_next(
+            self.expect_matches(
                 |t| matches!(t, Token::Colon),
                 "expected colon and argument type",
             )?;
@@ -156,11 +157,8 @@ impl Parser {
 
             args.push((name, SemanticType::from(type_str), rstart..rend));
 
-            if !matches!(
-                self.lexer.current(),
-                Some((Token::Operator(Operator::RightParenthesis), _))
-            ) {
-                self.expect_next(|t| matches!(t, Token::Comma), "expected comma")?;
+            if !matches!(self.lexer.current(), Some((Token::RightParenthesis, _))) {
+                self.expect_token(Token::Comma, "expected comma")?;
             }
         }
 
@@ -168,14 +166,11 @@ impl Parser {
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>, Error> {
-        self.expect_next(
-            |t| matches!(t, Token::Operator(Operator::LeftCurlyBracket)),
-            "expected opening curly bracket",
-        )?;
+        self.expect_token(Token::LeftCurlyBracket, "expected block")?;
 
         let mut statements = Vec::new();
         while let Some((token, _)) = self.lexer.current() {
-            if matches!(token, Token::Operator(Operator::RightCurlyBracket)) {
+            if matches!(token, Token::RightCurlyBracket) {
                 self.lexer.take_current()?;
                 return Ok(statements);
             }
@@ -183,7 +178,6 @@ impl Parser {
             match self.parse_statement() {
                 Ok(stmt) => statements.push(stmt),
                 Err(err) => {
-                    println!("stmt error: {:?}", err);
                     self.err_ctx.report(err);
                     self.find_semicolon()?;
                 }
@@ -198,7 +192,6 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<Statement, Error> {
         let (token, range) = self.lexer.current().unwrap().clone();
-        println!("stmt: {:?}", token);
 
         if let Token::Keyword(keyword) = token {
             self.lexer.take_current()?;
@@ -208,7 +201,7 @@ impl Parser {
 
             match self.lexer.take_current()? {
                 Some((Token::Semicolon, _)) => Ok(Statement::Expr(expr)),
-                Some((Token::Operator(Operator::Assign), _)) => {
+                Some((Token::Assign, _)) => {
                     let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
@@ -225,7 +218,7 @@ impl Parser {
                         var_range: range,
                     })
                 }
-                Some((Token::Operator(Operator::Declare), _)) => {
+                Some((Token::Declare, _)) => {
                     let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
@@ -257,6 +250,7 @@ impl Parser {
     fn parse_keyword(&mut self, keyword: Keyword, range: Range<usize>) -> Result<Statement, Error> {
         match keyword {
             Keyword::Return => self.parse_return(),
+            Keyword::If => self.parse_if(),
             _ => Err(self
                 .err_ctx
                 .unexpected_token(range, "unexpected keyword")
@@ -271,31 +265,25 @@ impl Parser {
         Ok(Statement::Return(expr))
     }
 
+    fn parse_if(&mut self) -> Result<Statement, Error> {
+        let guard = self.parse_expr()?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::If { guard, body })
+    }
+
     fn parse_expr(&mut self) -> Result<Expression, Error> {
         let mut lhs = self.parse_single_expr()?;
 
-        if let Some((Token::Operator(op), _)) = self.lexer.current()
-            && matches!(
-                op,
-                Operator::Plus | Operator::Minus | Operator::Star | Operator::Slash
-            )
-        {
+        if let Some((Token::Operator(op), _)) = self.lexer.current() {
             let mut op = *op;
 
-            let left_bind_power = match op {
-                Operator::Plus | Operator::Minus => 1,
-                Operator::Star | Operator::Slash => 2,
-                _ => unreachable!(),
-            };
+            let left_bind_power = op.precedence();
 
             self.lexer.take_current()?;
 
             let right_side = match self.lexer.peek() {
-                Some((Token::Operator(next_op), _)) => match next_op {
-                    Operator::Plus | Operator::Minus => Some((1, *next_op)),
-                    Operator::Star | Operator::Slash => Some((2, *next_op)),
-                    _ => None,
-                },
+                Some((Token::Operator(next_op), _)) => Some((next_op.precedence(), *next_op)),
                 _ => None,
             };
 
@@ -327,11 +315,39 @@ impl Parser {
 
     fn bind_expr(&mut self, op: Operator, lhs: Expression, rhs: Expression) -> ExprType {
         match op {
-            Operator::Plus => ExprType::Addition(Box::new(lhs), Box::new(rhs)),
-            Operator::Minus => ExprType::Subtraction(Box::new(lhs), Box::new(rhs)),
-            Operator::Star => ExprType::Multiplication(Box::new(lhs), Box::new(rhs)),
-            Operator::Slash => ExprType::Division(Box::new(lhs), Box::new(rhs)),
-            _ => unreachable!(),
+            Operator::Plus => {
+                ExprType::Arithmetic(Box::new(lhs), Box::new(rhs), ArithmeticOp::Add, None)
+            }
+            Operator::Minus => {
+                ExprType::Arithmetic(Box::new(lhs), Box::new(rhs), ArithmeticOp::Sub, None)
+            }
+            Operator::Star => {
+                ExprType::Arithmetic(Box::new(lhs), Box::new(rhs), ArithmeticOp::Mult, None)
+            }
+            Operator::Slash => {
+                ExprType::Arithmetic(Box::new(lhs), Box::new(rhs), ArithmeticOp::Div, None)
+            }
+            Operator::Equal => {
+                ExprType::Comparison(Box::new(lhs), Box::new(rhs), CompareOp::Equal, None)
+            }
+            Operator::NotEqual => {
+                ExprType::Comparison(Box::new(lhs), Box::new(rhs), CompareOp::NotEqual, None)
+            }
+            Operator::Less => {
+                ExprType::Comparison(Box::new(lhs), Box::new(rhs), CompareOp::Less, None)
+            }
+            Operator::LessOrEqual => {
+                ExprType::Comparison(Box::new(lhs), Box::new(rhs), CompareOp::LessOrEqual, None)
+            }
+            Operator::Greater => {
+                ExprType::Comparison(Box::new(lhs), Box::new(rhs), CompareOp::Greater, None)
+            }
+            Operator::GreaterOrEqual => ExprType::Comparison(
+                Box::new(lhs),
+                Box::new(rhs),
+                CompareOp::GreaterOrEqual,
+                None,
+            ),
         }
     }
 
@@ -367,18 +383,12 @@ impl Parser {
         ident: String,
         range: Range<usize>,
     ) -> Result<Expression, Error> {
-        if matches!(
-            self.lexer.current(),
-            Some((Token::Operator(Operator::LeftParenthesis), _))
-        ) {
+        if matches!(self.lexer.current(), Some((Token::LeftParenthesis, _))) {
             self.lexer.take_current()?;
 
             let args = self.parse_call_args()?;
 
-            self.expect_next(
-                |t| matches!(t, Token::Operator(Operator::RightParenthesis)),
-                "expected closing parenthesis",
-            )?;
+            self.expect_token(Token::RightParenthesis, "expected closing parenthesis")?;
 
             Ok(Expression {
                 expr_type: ExprType::FnCall(ident, args),
@@ -396,12 +406,9 @@ impl Parser {
         let mut args = Vec::new();
         let mut first = true;
 
-        while !matches!(
-            self.lexer.current(),
-            Some((Token::Operator(Operator::RightParenthesis), _))
-        ) {
+        while !matches!(self.lexer.current(), Some((Token::RightParenthesis, _))) {
             if !first {
-                self.expect_next(|t| matches!(t, Token::Comma), "expected comma")?;
+                self.expect_matches(|t| matches!(t, Token::Comma), "expected comma")?;
             }
 
             let expr = self.parse_expr()?;
@@ -413,7 +420,15 @@ impl Parser {
         Ok(args)
     }
 
-    fn expect_next<F>(&mut self, matches: F, message: impl ToString) -> Result<(), Error>
+    fn expect_op(&mut self, op: Operator, message: impl ToString) -> Result<(), Error> {
+        self.expect_matches(|t| matches!(t, Token::Operator(op)), message)
+    }
+
+    fn expect_token(&mut self, token: Token, message: impl ToString) -> Result<(), Error> {
+        self.expect_matches(|t| matches!(t, token), message)
+    }
+
+    fn expect_matches<F>(&mut self, matches: F, message: impl ToString) -> Result<(), Error>
     where
         F: FnOnce(&Token) -> bool,
     {

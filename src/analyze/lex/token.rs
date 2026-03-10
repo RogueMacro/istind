@@ -11,20 +11,48 @@ pub enum Token {
     Semicolon,
     Colon,
     Comma,
-    Operator(Operator),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Operator {
-    Declare,
-    Equality,
-    Arrow,
-
     LeftParenthesis,
     RightParenthesis,
     LeftCurlyBracket,
     RightCurlyBracket,
+
+    Declare,
     Assign,
+    Arrow,
+
+    Operator(Operator),
+}
+
+impl Token {
+    pub fn parse_atom(current: char, lookahead: Option<char>) -> Option<(Self, bool)> {
+        let token = match (current, lookahead) {
+            (':', Some('=')) => (Self::Declare, true),
+            ('-', Some('>')) => (Self::Arrow, true),
+
+            ('=', _) => (Self::Assign, false),
+            (';', _) => (Self::Semicolon, false),
+            (':', _) => (Self::Colon, false),
+            (',', _) => (Self::Comma, false),
+            ('(', _) => (Self::LeftParenthesis, false),
+            (')', _) => (Self::RightParenthesis, false),
+            ('{', _) => (Self::LeftCurlyBracket, false),
+            ('}', _) => (Self::RightCurlyBracket, false),
+            _ => return None,
+        };
+
+        Some(token)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Operator {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+
     Plus,
     Minus,
     Star,
@@ -34,15 +62,13 @@ pub enum Operator {
 impl Operator {
     pub fn parse(current: char, lookahead: Option<char>) -> Option<(Self, bool)> {
         let op = match (current, lookahead) {
-            (':', Some('=')) => (Self::Declare, true),
-            ('=', Some('=')) => (Self::Equality, true),
-            ('-', Some('>')) => (Self::Arrow, true),
+            ('=', Some('=')) => (Self::Equal, true),
+            ('!', Some('=')) => (Self::NotEqual, true),
+            ('<', Some('=')) => (Self::LessOrEqual, true),
+            ('>', Some('=')) => (Self::GreaterOrEqual, true),
+            ('<', _) => (Self::Less, false),
+            ('>', _) => (Self::Greater, false),
 
-            ('(', _) => (Self::LeftParenthesis, false),
-            (')', _) => (Self::RightParenthesis, false),
-            ('{', _) => (Self::LeftCurlyBracket, false),
-            ('}', _) => (Self::RightCurlyBracket, false),
-            ('=', _) => (Self::Assign, false),
             ('+', _) => (Self::Plus, false),
             ('-', _) => (Self::Minus, false),
             ('*', _) => (Self::Star, false),
@@ -52,6 +78,16 @@ impl Operator {
         };
 
         Some(op)
+    }
+
+    pub fn precedence(&self) -> i32 {
+        use Operator::*;
+
+        match self {
+            Equal | NotEqual | Less | LessOrEqual | Greater | GreaterOrEqual => 0,
+            Plus | Minus => 1,
+            Star | Slash => 2,
+        }
     }
 }
 

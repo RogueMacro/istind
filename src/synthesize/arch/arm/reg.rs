@@ -400,7 +400,10 @@ mod tests {
 
     /// Constructs a [BasicBlock] from a list of operations for use in tests.
     fn make_bb(ops: Vec<Operation>) -> BasicBlock {
-        BasicBlock { ops }
+        BasicBlock {
+            ops,
+            labels: HashMap::new(),
+        }
     }
 
     // ---- Stack ----

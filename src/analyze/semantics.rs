@@ -1,23 +1,22 @@
-use std::{collections::HashMap, ops::Range, rc::Rc};
+use std::{collections::HashMap, fmt, ops::Range, rc::Rc};
 
 use crate::analyze::{
     ErrorContext, ErrorVec,
-    ast::{AST, ExprType, Expression, Item, SemanticType, Statement},
+    ast::{AST, ExprType, Expression, Item, Statement},
 };
 
 pub struct ValidAST(pub AST);
 
 const MAIN_FN: &str = "main";
 
-pub fn analyze(ast: AST, source_name: Rc<String>) -> Result<ValidAST, ErrorVec> {
-    let mut analyzer = Analyzer::new(&ast, source_name);
-    analyzer.analyze()?;
+pub fn analyze(mut ast: AST, source_name: Rc<String>) -> Result<ValidAST, ErrorVec> {
+    let analyzer = Analyzer::new(source_name);
+    analyzer.analyze(&mut ast)?;
 
     Ok(ValidAST(ast))
 }
 
-struct Analyzer<'ast> {
-    ast: &'ast AST,
+struct Analyzer {
     err_ctx: ErrorContext,
 
     variables: HashMap<String, SemanticType>,
@@ -31,18 +30,17 @@ struct Analyzer<'ast> {
     >,
 }
 
-impl<'ast> Analyzer<'ast> {
-    pub fn new(ast: &'ast AST, source_name: Rc<String>) -> Self {
+impl Analyzer {
+    pub fn new(source_name: Rc<String>) -> Self {
         Self {
-            ast,
             err_ctx: ErrorContext::new(source_name),
             variables: HashMap::new(),
             functions: HashMap::new(),
         }
     }
 
-    pub fn analyze(&mut self) -> Result<(), ErrorVec> {
-        for item in &self.ast.items {
+    pub fn analyze(mut self, ast: &mut AST) -> Result<(), ErrorVec> {
+        for item in &ast.items {
             let Item::Function {
                 name,
                 ret_type,
@@ -67,7 +65,7 @@ impl<'ast> Analyzer<'ast> {
             }
         }
 
-        for item in &self.ast.items {
+        for item in &mut ast.items {
             self.item(item);
         }
 
@@ -78,7 +76,7 @@ impl<'ast> Analyzer<'ast> {
         Ok(())
     }
 
-    fn item(&mut self, item: &Item) {
+    fn item(&mut self, item: &mut Item) {
         self.variables.clear();
 
         let Item::Function {
@@ -93,14 +91,7 @@ impl<'ast> Analyzer<'ast> {
             self.variables.insert(arg.to_owned(), typ.clone());
         }
 
-        let mut has_return = false;
-        for stmt in body {
-            if matches!(stmt, Statement::Return(_)) {
-                has_return = true;
-            }
-
-            self.statement(stmt, ret_type, decl_range);
-        }
+        let has_return = self.body(body, ret_type, decl_range);
 
         if !has_return && name == MAIN_FN {
             self.err_ctx
@@ -111,12 +102,30 @@ impl<'ast> Analyzer<'ast> {
         }
     }
 
-    fn statement(
+    /// Returns whether this statement contains a return statement
+    fn body(
         &mut self,
-        stmt: &Statement,
+        body: &mut [Statement],
         fn_ret_type: &SemanticType,
         fn_decl_range: &Range<usize>,
-    ) {
+    ) -> bool {
+        let mut has_return = false;
+        for stmt in body {
+            if self.statement(stmt, fn_ret_type, fn_decl_range) {
+                has_return = true;
+            }
+        }
+
+        has_return
+    }
+
+    /// Returns whether this statement contains a return statement
+    fn statement(
+        &mut self,
+        stmt: &mut Statement,
+        fn_ret_type: &SemanticType,
+        fn_decl_range: &Range<usize>,
+    ) -> bool {
         match stmt {
             Statement::Declare {
                 var,
@@ -159,6 +168,22 @@ impl<'ast> Analyzer<'ast> {
                         .report();
                 }
             }
+            Statement::If { guard, body } => {
+                if let Some(typ) = self.expression(guard)
+                    && typ != SemanticType::Bool
+                {
+                    self.err_ctx
+                        .build(guard.range.clone())
+                        .with_message("unexpected type")
+                        .with_label(
+                            guard.range.clone(),
+                            format!("expected type 'bool', got '{}'", typ),
+                        )
+                        .report();
+                }
+
+                return self.body(body, fn_ret_type, fn_decl_range);
+            }
             Statement::Return(expr) | Statement::Expr(expr) => {
                 if let Some(typ) = self.expression(expr)
                     && &typ != fn_ret_type
@@ -173,27 +198,85 @@ impl<'ast> Analyzer<'ast> {
                         )
                         .report();
                 }
+
+                return true;
             }
         }
+
+        false
     }
 
-    fn expression(&mut self, expr: &Expression) -> Option<SemanticType> {
-        match &expr.expr_type {
+    fn expression(&mut self, expr: &mut Expression) -> Option<SemanticType> {
+        match &mut expr.expr_type {
             ExprType::Const(_) => Some(SemanticType::I64),
             ExprType::Character(_) => Some(SemanticType::Char),
             ExprType::Bool(_) => Some(SemanticType::Bool),
 
             ExprType::Variable(var) => self.check_var(var, &expr.range),
 
-            ExprType::Addition(expr1, expr2)
-            | ExprType::Multiplication(expr1, expr2)
-            | ExprType::Subtraction(expr1, expr2)
-            | ExprType::Division(expr1, expr2) => {
+            ExprType::Arithmetic(expr1, expr2, _op, expr_sign) => {
                 if let Some(type1) = self.expression(expr1)
                     && let Some(type2) = self.expression(expr2)
                 {
                     if type1 == type2 {
-                        return Some(type1);
+                        if let Some(type_sign) = type1.sign() {
+                            *expr_sign = Some(type_sign);
+                            return Some(type1);
+                        }
+
+                        self.err_ctx
+                            .build(expr1.range.start..expr2.range.end)
+                            .with_message("mismatched arithmetic types")
+                            .with_label(
+                                expr1.range.clone(),
+                                "arithmetic only allowed on integer types",
+                            )
+                            .report();
+                    }
+
+                    self.err_ctx
+                        .build(expr1.range.start..expr2.range.end)
+                        .with_message("mismatched types")
+                        .with_label(expr1.range.clone(), format!("this is of type {}", type1))
+                        .with_label(expr2.range.clone(), format!("this is of type {}", type2))
+                        .report();
+                }
+
+                None
+            }
+
+            ExprType::Comparison(expr1, expr2, _op, expr_sign) => {
+                if let Some(type1) = self.expression(expr1)
+                    && let Some(type2) = self.expression(expr2)
+                {
+                    if type1 == type2 {
+                        let sign1 = type1.sign();
+                        let sign2 = type2.sign();
+                        if sign1 == sign2 {
+                            *expr_sign = sign1;
+                            return Some(SemanticType::Bool);
+                        }
+
+                        let sign1_str = match sign1 {
+                            Some(Sign::Signed) => "a signed integer",
+                            Some(Sign::Unsigned) => "an unsigned integer",
+                            None => "not an integer",
+                        };
+
+                        let sign2_str = match sign2 {
+                            Some(Sign::Signed) => "a signed integer",
+                            Some(Sign::Unsigned) => "an unsigned integer",
+                            None => "not an integer",
+                        };
+
+                        self.err_ctx
+                            .build(expr1.range.start..expr2.range.end)
+                            .with_message(
+                                "mismatched comparison types, must have same sign/no sign",
+                            )
+                            .with_label(expr1.range.clone(), format!("this is {}", sign1_str))
+                            .with_label(expr2.range.clone(), format!("this is {}", sign2_str))
+                            .report();
                     }
 
                     self.err_ctx
@@ -209,7 +292,7 @@ impl<'ast> Analyzer<'ast> {
 
             ExprType::FnCall(function, call_args) => {
                 let call_types: Vec<(SemanticType, Range<usize>)> = call_args
-                    .iter()
+                    .iter_mut()
                     .filter_map(|e| self.expression(e).map(|t| (t, e.range.clone())))
                     .collect();
 
@@ -262,5 +345,60 @@ impl<'ast> Analyzer<'ast> {
             .report();
 
         None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Sign {
+    Signed,
+    Unsigned,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SemanticType {
+    Unit,
+    I64,
+    U64,
+    Char,
+    Bool,
+    UserType(String),
+}
+
+impl SemanticType {
+    pub fn sign(&self) -> Option<Sign> {
+        match self {
+            SemanticType::Unit => None,
+            SemanticType::I64 => Some(Sign::Signed),
+            SemanticType::U64 => Some(Sign::Unsigned),
+            SemanticType::Char => Some(Sign::Unsigned),
+            SemanticType::Bool => None,
+            SemanticType::UserType(_) => None,
+        }
+    }
+}
+
+impl<S: AsRef<str>> From<S> for SemanticType {
+    fn from(string: S) -> Self {
+        match string.as_ref() {
+            "()" => Self::Unit,
+            "i64" => Self::I64,
+            "u64" => Self::U64,
+            "char" => Self::Char,
+            "bool" => Self::Bool,
+            name => Self::UserType(name.to_owned()),
+        }
+    }
+}
+
+impl fmt::Display for SemanticType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SemanticType::Unit => write!(f, "()"),
+            SemanticType::I64 => write!(f, "i64"),
+            SemanticType::U64 => write!(f, "u64"),
+            SemanticType::Char => write!(f, "char"),
+            SemanticType::Bool => write!(f, "bool"),
+            SemanticType::UserType(typ) => write!(f, "{}", typ),
+        }
     }
 }

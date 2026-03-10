@@ -1,6 +1,8 @@
 #![allow(clippy::unusual_byte_groupings)]
 
-use ux::{i7, i12, i26, u12};
+use ux::{i7, i12, i19, i26, u12};
+
+use crate::ir::Condition;
 
 use super::reg::Register;
 
@@ -33,6 +35,39 @@ pub enum Input<I> {
     Reg(Register),
     Imm(I),
 }
+
+fn cond_to_u32(cond: Condition) -> u32 {
+    use Condition::*;
+
+    match cond {
+        Equal => 0b0000,
+        NotEqual => 0b0001,
+        UnsignedGreaterOrEqual => 0b0010,
+        UnsignedLess => 0b0011,
+        Negative => 0b0100,
+        PositiveOrZero => 0b0101,
+        Overflow => 0b0110,
+        NoOverflow => 0b0111,
+        UnsignedGreater => 0b1000,
+        UnsignedLessOrEqual => 0b1001,
+        SignedGreaterOrEqual => 0b1010,
+        SignedLess => 0b1011,
+        SignedGreater => 0b1100,
+        SignedLessOrEqual => 0b1101,
+        Always => 0b1110,
+        Never => 0b1111,
+    }
+}
+
+fn i32_to_u32(n: impl Into<i32>, bits: i32) -> u32 {
+    let mask = !(i32::MIN >> (31 - bits));
+    let n: i32 = n.into();
+    (n & mask) as u32
+}
+
+// ----------------
+// | INSTRUCTIONS |
+// ----------------
 
 /// ADD instruction.
 ///
@@ -67,7 +102,52 @@ impl Instruction for Add {
     }
 }
 
-/// Branch with link instruction.
+/// B instruction.
+///
+/// Branches unconditionally to a pc-relative offset.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 0  0  0  1  0  1  imm26
+///
+/// - imm26: offset encoded as offset/4
+#[derive(Debug, Clone, Copy)]
+pub struct Branch {
+    pub offset: i26,
+}
+
+impl Instruction for Branch {
+    fn encode(&self) -> u32 {
+        let offset = i32_to_u32(self.offset, 26);
+
+        (0b000101 << 26) | offset
+    }
+}
+
+/// B instruction with condition.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 0  1  0  1  0  1  0  0  imm19                                                    0  cond
+///
+/// - imm19: pc relative offset to jump to (encoded as offset/4)
+/// - cond: condition as specified in [Condition]
+#[derive(Debug, Clone, Copy)]
+pub struct BranchCond {
+    pub offset: i19,
+    pub cond: Condition,
+}
+
+impl Instruction for BranchCond {
+    fn encode(&self) -> u32 {
+        let offset = i32_to_u32(self.offset, 19);
+        let cond = cond_to_u32(self.cond.inverted());
+
+        (0b01010100 << 24) | (offset << 5) | cond
+    }
+}
+
+/// BL instruction.
 ///
 /// Stores pc+4 in lr and jumps to address.
 ///
@@ -83,9 +163,80 @@ pub struct BranchLink {
 
 impl Instruction for BranchLink {
     fn encode(&self) -> u32 {
-        let addr = (to_u32(self.addr)) & 0b000000_11111111111111111111111111;
+        let addr = i32_to_u32(self.addr, 26);
 
         0b100101_00000000000000000000000000 | addr
+    }
+}
+
+/// CBNZ instruction.
+///
+/// Branch if register is not zero.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  0  1  1  0  1  0  1  imm19                                                    Rt
+///
+/// - imm19: jump offset (encoded offset/4)
+/// - Rt: register to compare against
+#[derive(Debug, Clone, Copy)]
+pub struct BranchNotZero {
+    pub addr: i19,
+    pub reg: Register,
+}
+
+impl Instruction for BranchNotZero {
+    fn encode(&self) -> u32 {
+        let addr = i32_to_u32(self.addr, 19);
+        let reg = self.reg as u32;
+
+        (0b10110101 << 24) | (addr << 5) | reg
+    }
+}
+
+/// CBZ instruction.
+///
+/// Branch if register is zero.
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  0  1  1  0  1  0  0  imm19                                                    Rt
+///
+/// - imm19: jump offset (encoded offset/4)
+/// - Rt: register to compare against
+#[derive(Debug, Clone, Copy)]
+pub struct BranchZero {
+    pub addr: i19,
+    pub reg: Register,
+}
+
+impl Instruction for BranchZero {
+    fn encode(&self) -> u32 {
+        let addr = i32_to_u32(self.addr, 19);
+        let reg = self.reg as u32;
+
+        (0b10110100 << 24) | (addr << 5) | reg
+    }
+}
+
+/// CMP instruction (alias of SUBS).
+///
+/// Encoding:
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 1  1  1  0  1  0  1  1  shift 0  Rm             imm6              Rn             1  1  1  1  1
+///
+#[derive(Debug, Clone, Copy)]
+pub struct Cmp {
+    pub a: Register,
+    pub b: Register,
+}
+
+impl Instruction for Cmp {
+    fn encode(&self) -> u32 {
+        let a = self.a as u32;
+        let b = self.b as u32;
+
+        (0b11101011_00_0 << 21) | (b << 16) | (a << 5) | 0b11111
     }
 }
 
@@ -477,8 +628,4 @@ impl Instruction for Syscall {
     fn encode(&self) -> u32 {
         Svc { imm: 0x80 }.encode()
     }
-}
-
-fn to_u32(n: impl Into<i32>) -> u32 {
-    n.into() as u32
 }

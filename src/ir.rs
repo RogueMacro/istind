@@ -1,8 +1,12 @@
 use std::{collections::HashMap, fmt};
 
-use crate::ir::lifetime::{Interval, Lifetime};
+use crate::{
+    analyze::ast::CompareOp,
+    ir::lifetime::{Interval, Lifetime},
+};
 
 pub mod codegen;
+pub mod flow;
 pub mod lifetime;
 
 pub struct IR {
@@ -17,7 +21,10 @@ pub enum Item {
     },
 }
 
+pub type OpIndex = usize;
+
 pub struct BasicBlock {
+    pub labels: HashMap<OpIndex, Vec<Label>>,
     pub ops: Vec<Operation>,
 }
 
@@ -36,6 +43,7 @@ impl BasicBlock {
                 if let Some(u) = uses.iter().position(|r| r == vreg) {
                     uses.swap_remove(u);
                     interval.range.end = i + 1;
+
                     true
                 } else {
                     let lifetime = lifetimes.entry(*vreg).or_default();
@@ -65,9 +73,18 @@ impl BasicBlock {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Label(u32);
+
+impl fmt::Display for Label {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, ".L{}", self.0)
+    }
+}
+
 pub type Op = Operation;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Operation {
     Assign {
         src: SourceVal,
@@ -92,6 +109,16 @@ pub enum Operation {
         a: VirtualReg,
         b: VirtualReg,
         dest: VirtualReg,
+    },
+    Compare {
+        a: VirtualReg,
+        b: VirtualReg,
+        cond: Condition,
+        dest: VirtualReg,
+    },
+    BranchIfFalse {
+        cond: VirtualReg,
+        label: Label,
     },
     Return {
         value: SourceVal,
@@ -132,8 +159,26 @@ impl Operation {
                 push(Some(*dest));
             }
 
+            Operation::Compare {
+                a,
+                b,
+                cond: _,
+                dest,
+            } => {
+                push(Some(*a));
+                push(Some(*b));
+                push(Some(*dest));
+            }
+            Operation::BranchIfFalse { cond, label: _ } => {
+                push(Some(*cond));
+            }
+
             Operation::Return { value } => push(value.reg()),
-            Operation::Call { dest, args, .. } => {
+            Operation::Call {
+                dest,
+                args,
+                function: _,
+            } => {
                 push(*dest);
                 for vreg in args {
                     push(Some(*vreg));
@@ -143,9 +188,69 @@ impl Operation {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Condition {
+    Equal,
+    NotEqual,
+    UnsignedGreaterOrEqual,
+    UnsignedLess,
+    UnsignedGreater,
+    UnsignedLessOrEqual,
+    SignedGreaterOrEqual,
+    SignedLess,
+    SignedGreater,
+    SignedLessOrEqual,
+    Negative,
+    PositiveOrZero,
+    Overflow,
+    NoOverflow,
+    Always,
+    Never,
+}
+
+impl Condition {
+    pub fn from_ast_op(op: CompareOp, signed: bool) -> Self {
+        match (op, signed) {
+            (CompareOp::Equal, _) => Self::Equal,
+            (CompareOp::NotEqual, _) => Self::NotEqual,
+            (CompareOp::Less, true) => Self::SignedLess,
+            (CompareOp::Less, false) => Self::UnsignedLess,
+            (CompareOp::LessOrEqual, true) => Self::SignedLessOrEqual,
+            (CompareOp::LessOrEqual, false) => Self::UnsignedLessOrEqual,
+            (CompareOp::Greater, true) => Self::SignedGreater,
+            (CompareOp::Greater, false) => Self::UnsignedGreater,
+            (CompareOp::GreaterOrEqual, true) => Self::SignedGreaterOrEqual,
+            (CompareOp::GreaterOrEqual, false) => Self::UnsignedGreaterOrEqual,
+        }
+    }
+
+    pub fn inverted(&self) -> Condition {
+        use Condition::*;
+
+        match self {
+            Equal => NotEqual,
+            NotEqual => Equal,
+            UnsignedGreaterOrEqual => UnsignedLess,
+            UnsignedLess => UnsignedGreaterOrEqual,
+            UnsignedGreater => UnsignedLessOrEqual,
+            UnsignedLessOrEqual => UnsignedGreater,
+            SignedGreaterOrEqual => SignedLess,
+            SignedLess => SignedGreaterOrEqual,
+            SignedGreater => SignedLessOrEqual,
+            SignedLessOrEqual => SignedGreater,
+            Negative => PositiveOrZero,
+            PositiveOrZero => Negative,
+            Overflow => NoOverflow,
+            NoOverflow => Overflow,
+            Always => Never,
+            Never => Always,
+        }
+    }
+}
+
 /// A value that can be used in an operation as a source, either an immediate operand or a
 /// register.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SourceVal {
     Immediate(i64),
     VReg(VirtualReg),
@@ -194,9 +299,16 @@ impl fmt::Display for IR {
 
             writeln!(f, ") {{")?;
 
-            for op in bb.ops.iter() {
+            for (i, op) in bb.ops.iter().enumerate() {
+                if let Some(labels) = bb.labels.get(&i) {
+                    for label in labels {
+                        write!(f, "{}", label)?;
+                    }
+                    writeln!(f);
+                }
+
                 match op {
-                    Operation::Assign { src, dest } => writeln!(f, "    let {} = {}", dest, src)?,
+                    Operation::Assign { src, dest } => writeln!(f, "    {} = {}", dest, src)?,
                     Operation::Add { a, b, dest } => writeln!(f, "    {} = {} + {}", dest, a, b)?,
                     Operation::Subtract { a, b, dest } => {
                         writeln!(f, "    {} = {} - {}", dest, a, b)?
@@ -206,6 +318,12 @@ impl fmt::Display for IR {
                     }
                     Operation::Divide { a, b, dest } => {
                         writeln!(f, "    {} = {} / {}", dest, a, b)?
+                    }
+                    Operation::Compare { a, b, cond, dest } => {
+                        writeln!(f, "    {} = cmp {} {:?} {}", dest, a, cond, b)?
+                    }
+                    Operation::BranchIfFalse { cond, label } => {
+                        writeln!(f, "    if not {} goto {}", cond, label)?;
                     }
                     Operation::Return { value } => writeln!(f, "    ret {}", value)?,
                     Operation::Call {

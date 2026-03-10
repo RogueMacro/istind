@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     analyze::{
-        ast::{ExprType, Expression, Item as AstItem, Statement},
-        semantics::ValidAST,
+        ast::{ArithmeticOp, ExprType, Expression, Item as AstItem, Statement},
+        semantics::{Sign, ValidAST},
     },
-    ir::{BasicBlock, IR, Item, Op, SourceVal, VirtualReg},
+    ir::{BasicBlock, Condition, IR, Item, Label, Op, OpIndex, SourceVal, VirtualReg},
 };
 
 impl IR {
@@ -43,6 +43,8 @@ impl IR {
 struct BlockBuilder {
     vregs: HashMap<String, VirtualReg>,
     vreg_counter: u32,
+    labels: HashMap<OpIndex, Vec<Label>>,
+    label_counter: u32,
     ops: Vec<Op>,
 }
 
@@ -51,11 +53,21 @@ impl BlockBuilder {
         Self {
             vregs: HashMap::new(),
             vreg_counter: 0,
+            labels: HashMap::new(),
+            label_counter: 0,
             ops: Vec::new(),
         }
     }
 
     pub fn build(mut self, block: Vec<Statement>) -> BasicBlock {
+        self.consume_block(block);
+        BasicBlock {
+            ops: self.ops,
+            labels: self.labels,
+        }
+    }
+
+    fn consume_block(&mut self, block: Vec<Statement>) {
         self.ops.reserve(block.len());
 
         for stmt in block {
@@ -74,13 +86,44 @@ impl BlockBuilder {
                     let value = self.unroll_expr(&expr, None);
                     self.ops.push(Op::Return { value });
                 }
+                Statement::If { guard, body } => {
+                    let cond = self.unroll_expr(&guard, None);
+                    let cond = self.src_to_vreg(cond);
+                    let label = self.reserve_label();
+                    self.ops.push(Op::BranchIfFalse { cond, label });
+
+                    // let sub_vregs = self
+                    //     .vregs
+                    //     .iter()
+                    //     .map(|(k, v)| (k.to_owned(), VirtualReg(v.0 * 2)))
+                    //     .collect();
+
+                    let outer_vregs = std::mem::take(&mut self.vregs);
+                    let outer_vreg_counter = std::mem::take(&mut self.vreg_counter);
+
+                    self.consume_block(body);
+
+                    for (name, inner) in self.vregs.iter() {
+                        if let Some(outer) = outer_vregs.get(name)
+                            && inner != outer
+                        {
+                            self.ops.push(Op::Assign {
+                                src: SourceVal::VReg(*inner),
+                                dest: *outer,
+                            });
+                        }
+                    }
+
+                    self.set_label_here(label);
+
+                    self.vregs = outer_vregs;
+                    self.vreg_counter = outer_vreg_counter;
+                }
                 Statement::Expr(expr) => {
                     self.unroll_expr(&expr, None);
                 }
             }
         }
-
-        BasicBlock { ops: self.ops }
     }
 
     fn unroll_expr(&mut self, expr: &Expression, dest: Option<VirtualReg>) -> SourceVal {
@@ -89,7 +132,7 @@ impl BlockBuilder {
             ExprType::Character(c) => SourceVal::Immediate(*c as i64),
             ExprType::Bool(b) => SourceVal::Immediate(*b as i64),
             ExprType::Variable(var, ..) => SourceVal::VReg(self.expect_vreg(var)),
-            ExprType::Addition(expr1, expr2) => {
+            ExprType::Arithmetic(expr1, expr2, op, sign) => {
                 let a = self.unroll_expr(expr1.as_ref(), None);
                 let b = self.unroll_expr(expr2.as_ref(), None);
 
@@ -97,43 +140,31 @@ impl BlockBuilder {
                 let b = self.src_to_vreg(b);
 
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
-                self.ops.push(Op::Add { a, b, dest });
+
+                match op {
+                    ArithmeticOp::Add => self.ops.push(Op::Add { a, b, dest }),
+                    ArithmeticOp::Sub => self.ops.push(Op::Subtract { a, b, dest }),
+                    ArithmeticOp::Mult => self.ops.push(Op::Multiply { a, b, dest }),
+                    ArithmeticOp::Div => self.ops.push(Op::Divide { a, b, dest }),
+                }
 
                 SourceVal::VReg(dest)
             }
-            ExprType::Subtraction(expr1, expr2) => {
-                let a = self.unroll_expr(expr1.as_ref(), None);
-                let b = self.unroll_expr(expr2.as_ref(), None);
+            ExprType::Comparison(expr1, expr2, op, sign) => {
+                let expr1 = self.unroll_expr(expr1, None);
+                let expr2 = self.unroll_expr(expr2, None);
 
-                let a = self.src_to_vreg(a);
-                let b = self.src_to_vreg(b);
-
-                let dest = dest.unwrap_or_else(|| self.get_vreg());
-                self.ops.push(Op::Subtract { a, b, dest });
-
-                SourceVal::VReg(dest)
-            }
-            ExprType::Multiplication(expr1, expr2) => {
-                let a = self.unroll_expr(expr1.as_ref(), None);
-                let a = self.src_to_vreg(a);
-
-                let b = self.unroll_expr(expr2.as_ref(), None);
-                let b = self.src_to_vreg(b);
+                let expr1 = self.src_to_vreg(expr1);
+                let expr2 = self.src_to_vreg(expr2);
 
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
-                self.ops.push(Op::Multiply { a, b, dest });
 
-                SourceVal::VReg(dest)
-            }
-            ExprType::Division(expr1, expr2) => {
-                let a = self.unroll_expr(expr1.as_ref(), None);
-                let a = self.src_to_vreg(a);
-
-                let b = self.unroll_expr(expr2.as_ref(), None);
-                let b = self.src_to_vreg(b);
-
-                let dest = dest.unwrap_or_else(|| self.get_vreg());
-                self.ops.push(Op::Divide { a, b, dest });
+                self.ops.push(Op::Compare {
+                    a: expr1,
+                    b: expr2,
+                    cond: Condition::from_ast_op(*op, matches!(sign, Some(Sign::Signed))),
+                    dest,
+                });
 
                 SourceVal::VReg(dest)
             }
@@ -190,5 +221,14 @@ impl BlockBuilder {
             }
             SourceVal::VReg(vreg) => vreg,
         }
+    }
+
+    fn reserve_label(&mut self) -> Label {
+        self.label_counter += 1;
+        Label(self.label_counter - 1)
+    }
+
+    fn set_label_here(&mut self, label: Label) {
+        self.labels.entry(self.ops.len()).or_default().push(label);
     }
 }
