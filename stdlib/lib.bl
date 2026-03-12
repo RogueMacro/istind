@@ -2,8 +2,8 @@ fn print(c: i64) -> i64 {
     return c;
 }
 
-//fn mod(dividend: i64, divisor: i64) -> i64 {
-//    n := dividend / divisor;
-//    return dividend - n * divisor;
-//}
+fn mod(dividend: i64, divisor: i64) -> i64 {
+    n := dividend / divisor;
+    return dividend - n * divisor;
+}
 

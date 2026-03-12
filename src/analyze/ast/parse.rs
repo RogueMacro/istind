@@ -227,7 +227,7 @@ impl Parser {
                     let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
-                            .build(expr.span)
+                            .error(expr.span)
                             .with_message("only variables are allowed in assignments")
                             .finish());
                     };
@@ -244,7 +244,7 @@ impl Parser {
                     let ExprType::Variable(var) = expr.expr_type else {
                         return Err(self
                             .err_ctx
-                            .build(expr.span)
+                            .error(expr.span)
                             .with_message("only variables are allowed in assignments")
                             .finish());
                     };
@@ -478,7 +478,7 @@ impl Parser {
 
             let insert_span = self.span((pos - 1)..pos);
             self.err_ctx
-                .build(self.span(pos..(pos + 1)))
+                .error(self.span(pos..(pos + 1)))
                 .with_code(ErrorCode::MissingSemicolon)
                 .with_message("expected semicolon")
                 .with_label(insert_span, "insert the semicolon dummy")

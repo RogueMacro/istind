@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt, path::PathBuf, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    path::PathBuf,
+    rc::Rc,
+};
 
 use crate::analyze::{
     ErrorContext, ErrorVec, Span,
@@ -22,6 +27,7 @@ struct Analyzer {
 
     variables: HashMap<String, SemanticType>,
     functions: HashMap<String, (Span, SemanticType, Vec<(Span, SemanticType)>)>,
+    called_funcs: HashSet<String>,
 }
 
 impl Analyzer {
@@ -31,6 +37,7 @@ impl Analyzer {
             src_path,
             variables: HashMap::new(),
             functions: HashMap::new(),
+            called_funcs: HashSet::from([String::from(MAIN_FN)]),
         }
     }
 
@@ -54,7 +61,7 @@ impl Analyzer {
                     (decl_span.clone(), ret_type.to_owned(), args),
                 ) {
                     self.err_ctx
-                        .build(decl_span.clone())
+                        .error(decl_span.clone())
                         .with_message("duplicate function definition")
                         .with_label(decl_span.clone(), "defined here")
                         .with_label(other_decl_span.clone(), "first defined here")
@@ -66,6 +73,26 @@ impl Analyzer {
         for item in &mut ast.items {
             self.item(item);
         }
+
+        ast.items.retain(|item| match item {
+            Item::Function { name, .. } => self.called_funcs.contains(name),
+            Item::ExternLib(_) => false,
+        });
+
+        // for item in &ast.items {
+        //     if let Item::Function {
+        //         name, decl_span, ..
+        //     } = item
+        //         && name != MAIN_FN
+        //         && !self.called_funcs.contains(name)
+        //     {
+        //         // self.err_ctx
+        //         //     .warn(decl_span.clone())
+        //         //     .with_message("unused function")
+        //         //     .with_label(decl_span.clone(), "function is never used")
+        //         //     .report();
+        //     }
+        // }
 
         if !self.err_ctx.is_empty() {
             return Err(self.err_ctx.take_errors());
@@ -93,7 +120,7 @@ impl Analyzer {
 
                 if !has_return && name == MAIN_FN {
                     self.err_ctx
-                        .build(decl_span.clone())
+                        .error(decl_span.clone())
                         .with_message("no return statement found in function main")
                         .with_label(decl_span.clone(), "main must return a value")
                         .report();
@@ -140,7 +167,7 @@ impl Analyzer {
                     .is_some()
                 {
                     self.err_ctx
-                        .build(var_span.clone())
+                        .error(var_span.clone())
                         .with_message("duplicate variable declaration")
                         .with_label(var_span.clone(), "variable already defined")
                         .report();
@@ -159,7 +186,7 @@ impl Analyzer {
                     && assign_type != decl_type
                 {
                     self.err_ctx
-                        .build(combine_span(var_span, &expr.span))
+                        .error(combine_span(var_span, &expr.span))
                         .with_message("mismatched types")
                         .with_label(var_span.clone(), format!("this is of type {}", decl_type))
                         .with_label(
@@ -174,7 +201,7 @@ impl Analyzer {
                     && typ != SemanticType::Bool
                 {
                     self.err_ctx
-                        .build(guard.span.clone())
+                        .error(guard.span.clone())
                         .with_message("unexpected type")
                         .with_label(
                             guard.span.clone(),
@@ -190,7 +217,7 @@ impl Analyzer {
                     && &typ != fn_ret_type
                 {
                     self.err_ctx
-                        .build(expr.span.clone())
+                        .error(expr.span.clone())
                         .with_message("incompatible types")
                         .with_label(expr.span.clone(), format!("this is of type {}", typ))
                         .with_label(
@@ -226,7 +253,7 @@ impl Analyzer {
                         }
 
                         self.err_ctx
-                            .build(combine_span(&expr1.span, &expr2.span))
+                            .error(combine_span(&expr1.span, &expr2.span))
                             .with_message("mismatched arithmetic types")
                             .with_label(
                                 expr1.span.clone(),
@@ -236,7 +263,7 @@ impl Analyzer {
                     }
 
                     self.err_ctx
-                        .build(combine_span(&expr1.span, &expr2.span))
+                        .error(combine_span(&expr1.span, &expr2.span))
                         .with_message("mismatched types")
                         .with_label(expr1.span.clone(), format!("this is of type {}", type1))
                         .with_label(expr2.span.clone(), format!("this is of type {}", type2))
@@ -271,7 +298,7 @@ impl Analyzer {
                         };
 
                         self.err_ctx
-                            .build(combine_span(&expr1.span, &expr2.span))
+                            .error(combine_span(&expr1.span, &expr2.span))
                             .with_message(
                                 "mismatched comparison types, must have same sign/no sign",
                             )
@@ -281,7 +308,7 @@ impl Analyzer {
                     }
 
                     self.err_ctx
-                        .build(combine_span(&expr1.span, &expr2.span))
+                        .error(combine_span(&expr1.span, &expr2.span))
                         .with_message("mismatched types")
                         .with_label(expr1.span.clone(), format!("this is of type {}", type1))
                         .with_label(expr2.span.clone(), format!("this is of type {}", type2))
@@ -300,7 +327,7 @@ impl Analyzer {
                 if let Some((fn_decl_span, ret_type, decl_args)) = self.functions.get(function) {
                     if decl_args.len() != call_args.len() {
                         self.err_ctx
-                            .build(expr.span.clone())
+                            .error(expr.span.clone())
                             .with_message("invalid argument count")
                             .with_label(
                                 expr.span.clone(),
@@ -319,7 +346,7 @@ impl Analyzer {
                     {
                         if call_type != decl_type {
                             self.err_ctx
-                                .build(call_span.clone())
+                                .error(call_span.clone())
                                 .with_message("incompatible types")
                                 .with_label(
                                     call_span.clone(),
@@ -333,10 +360,14 @@ impl Analyzer {
                         }
                     }
 
+                    if !self.called_funcs.contains(function) {
+                        self.called_funcs.insert(function.to_owned());
+                    }
+
                     return Some(ret_type.clone());
                 } else {
                     self.err_ctx
-                        .build(expr.span.clone())
+                        .error(expr.span.clone())
                         .with_message("invalid function call")
                         .with_label(expr.span.clone(), format!("{} is not a function", function))
                         .report();
@@ -353,7 +384,7 @@ impl Analyzer {
         }
 
         self.err_ctx
-            .build(span.clone())
+            .error(span.clone())
             .with_message("undeclared variable")
             .with_label(span.clone(), "this guy doesn't exist")
             .report();

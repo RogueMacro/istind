@@ -82,21 +82,30 @@ impl ErrorContext {
     }
 
     pub fn unexpected_token(&mut self, span: Span, message: impl ToString) -> ErrorBuilder<'_> {
-        self.build(span.clone())
+        self.error(span.clone())
             .with_code(ErrorCode::UnexpectedToken)
             .with_message("unexpected token")
             .with_label(span, message)
     }
 
     pub fn unexpected_eof(&mut self, span: Span) -> ErrorBuilder<'_> {
-        self.build(span.clone())
+        self.error(span.clone())
             .with_code(ErrorCode::UnexpectedToken)
             .with_message("unexpected end of file")
             .with_label(span, "why stop here??")
     }
 
-    pub fn build(&mut self, span: Span) -> ErrorBuilder<'_> {
+    pub fn error(&mut self, span: Span) -> ErrorBuilder<'_> {
         let builder = Report::build(ReportKind::Error, span);
+
+        ErrorBuilder {
+            builder,
+            context: self,
+        }
+    }
+
+    pub fn warn(&mut self, span: Span) -> ErrorBuilder<'_> {
+        let builder = Report::build(ReportKind::Warning, span);
 
         ErrorBuilder {
             builder,
