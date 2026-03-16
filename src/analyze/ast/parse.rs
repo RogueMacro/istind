@@ -377,6 +377,23 @@ impl Parser {
                 expr_type: ExprType::Const(num),
                 span: self.span(range),
             }),
+            Some((Token::Reference, ref_range)) => {
+                let (token, var_range) = self.expect_take_current()?;
+                let Token::Ident(var) = token else {
+                    let var_span = self.span(var_range);
+                    return Err(self
+                        .err_ctx
+                        .error(self.span(ref_range))
+                        .with_message("invalid pointer")
+                        .with_label(var_span, "expected variable")
+                        .finish());
+                };
+
+                Ok(Expression {
+                    expr_type: ExprType::Pointer(var),
+                    span: self.span(ref_range.start..var_range.end),
+                })
+            }
             Some((Token::Ident(ident), range)) => self.parse_ident_expr(ident, range),
             Some((Token::Character(c), range)) => Ok(Expression {
                 expr_type: ExprType::Character(c),

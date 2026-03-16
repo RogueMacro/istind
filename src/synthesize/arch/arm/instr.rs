@@ -289,7 +289,6 @@ pub struct Load {
 impl Instruction for Load {
     fn encode(&self) -> u32 {
         let offset: u32 = self.stack_offset.into();
-        let offset = offset / 8;
         let base = Register::SP as u32;
         let dest = self.dest as u32;
 

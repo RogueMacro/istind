@@ -68,7 +68,7 @@ impl<E: Executable> Compiler<E> {
             ast.items.extend(lib_ast.items);
         }
 
-        let ast = semantics::analyze(ast, name)?;
+        let ast = semantics::analyze(ast)?;
 
         let ir = IR::generate(ast);
         println!("{}", ir);

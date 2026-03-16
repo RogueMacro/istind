@@ -14,8 +14,8 @@ pub struct ValidAST(pub AST);
 
 const MAIN_FN: &str = "main";
 
-pub fn analyze(mut ast: AST, source_name: Rc<PathBuf>) -> Result<ValidAST, ErrorVec> {
-    let analyzer = Analyzer::new(source_name);
+pub fn analyze(mut ast: AST) -> Result<ValidAST, ErrorVec> {
+    let analyzer = Analyzer::new();
     analyzer.analyze(&mut ast)?;
 
     Ok(ValidAST(ast))
@@ -23,7 +23,6 @@ pub fn analyze(mut ast: AST, source_name: Rc<PathBuf>) -> Result<ValidAST, Error
 
 struct Analyzer {
     err_ctx: ErrorContext,
-    src_path: Rc<PathBuf>,
 
     variables: HashMap<String, SemanticType>,
     functions: HashMap<String, (Span, SemanticType, Vec<(Span, SemanticType)>)>,
@@ -31,10 +30,9 @@ struct Analyzer {
 }
 
 impl Analyzer {
-    pub fn new(src_path: Rc<PathBuf>) -> Self {
+    pub fn new() -> Self {
         Self {
             err_ctx: ErrorContext::new(),
-            src_path,
             variables: HashMap::new(),
             functions: HashMap::new(),
             called_funcs: HashSet::from([String::from(MAIN_FN)]),
@@ -241,7 +239,7 @@ impl Analyzer {
             ExprType::Bool(_) => Some(SemanticType::Bool),
 
             ExprType::Variable(var) => self.check_var(var, &expr.span),
-
+            ExprType::Pointer(expr) => todo!(),
             ExprType::Arithmetic(expr1, expr2, _op, expr_sign) => {
                 if let Some(type1) = self.expression(expr1)
                     && let Some(type2) = self.expression(expr2)
@@ -410,6 +408,7 @@ pub enum SemanticType {
     U64,
     Char,
     Bool,
+    Pointer(Box<SemanticType>),
     UserType(String),
 }
 
@@ -421,6 +420,7 @@ impl SemanticType {
             SemanticType::U64 => Some(Sign::Unsigned),
             SemanticType::Char => Some(Sign::Unsigned),
             SemanticType::Bool => None,
+            SemanticType::Pointer(typ) => typ.sign(),
             SemanticType::UserType(_) => None,
         }
     }
@@ -428,7 +428,14 @@ impl SemanticType {
 
 impl<S: AsRef<str>> From<S> for SemanticType {
     fn from(string: S) -> Self {
-        match string.as_ref() {
+        let string = string.as_ref();
+
+        if let Some(typ) = string.strip_suffix('*') {
+            let typ = SemanticType::from(typ);
+            return SemanticType::Pointer(Box::new(typ));
+        }
+
+        match string {
             "()" => Self::Unit,
             "i64" => Self::I64,
             "u64" => Self::U64,
@@ -447,6 +454,7 @@ impl fmt::Display for SemanticType {
             SemanticType::U64 => write!(f, "u64"),
             SemanticType::Char => write!(f, "char"),
             SemanticType::Bool => write!(f, "bool"),
+            SemanticType::Pointer(typ) => write!(f, "{}*", typ),
             SemanticType::UserType(typ) => write!(f, "{}", typ),
         }
     }

@@ -16,6 +16,8 @@ pub enum Token {
     LeftCurlyBracket,
     RightCurlyBracket,
 
+    Reference,
+
     Declare,
     Assign,
     Arrow,
@@ -39,6 +41,9 @@ impl Token {
             (')', _) => (Self::RightParenthesis, false),
             ('{', _) => (Self::LeftCurlyBracket, false),
             ('}', _) => (Self::RightCurlyBracket, false),
+
+            ('&', _) => (Self::Reference, false),
+
             _ => return None,
         };
 

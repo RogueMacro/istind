@@ -75,6 +75,7 @@ pub enum ExprType {
     Bool(bool),
 
     Variable(String),
+    Pointer(String),
 
     Arithmetic(Box<Expression>, Box<Expression>, ArithmeticOp, Option<Sign>),
     Comparison(Box<Expression>, Box<Expression>, CompareOp, Option<Sign>),

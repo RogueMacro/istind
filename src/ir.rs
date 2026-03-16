@@ -1,4 +1,7 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     analyze::ast::CompareOp,
@@ -36,7 +39,7 @@ impl BasicBlock {
 
         for (i, op) in self.ops.iter().enumerate() {
             uses.clear();
-            op.vregs_used(&mut uses);
+            op._vregs_used(&mut uses);
 
             active.retain_mut(|(vreg, interval)| {
                 if let Some(u) = uses.iter().position(|r| r == vreg) {
@@ -130,32 +133,35 @@ pub enum Operation {
 }
 
 impl Operation {
+    pub fn _vregs_used(&self, _out: &mut Vec<VirtualReg>) {}
+
     /// Gets the virtual registers used in this operation. Both source and destination registers.
-    pub fn vregs_used(&self, out: &mut Vec<VirtualReg>) {
+    pub fn vregs_used(&self) -> (HashSet<VirtualReg>, Option<VirtualReg>) {
+        let mut used = HashSet::new();
+        let mut assigned = None;
+
         let mut push = |vreg: Option<VirtualReg>| {
-            if let Some(vreg) = vreg
-                && !out.contains(&vreg)
-            {
-                out.push(vreg);
+            if let Some(vreg) = vreg {
+                used.insert(vreg);
             }
         };
 
         match self {
             Operation::Assign { src, dest } => {
                 push(src.reg());
-                push(Some(*dest));
+                assigned = Some(*dest);
             }
             Operation::Add { a, b, dest } | Operation::Subtract { a, b, dest } => {
                 // push(a.reg());
                 // push(b.reg());
                 push(Some(*a));
                 push(Some(*b));
-                push(Some(*dest));
+                assigned = Some(*dest);
             }
             Operation::Multiply { a, b, dest } | Operation::Divide { a, b, dest } => {
                 push(Some(*a));
                 push(Some(*b));
-                push(Some(*dest));
+                assigned = Some(*dest);
             }
 
             Operation::Compare {
@@ -166,7 +172,7 @@ impl Operation {
             } => {
                 push(Some(*a));
                 push(Some(*b));
-                push(Some(*dest));
+                assigned = Some(*dest);
             }
             Operation::BranchIfFalse { cond, label: _ } => {
                 push(Some(*cond));
@@ -178,12 +184,14 @@ impl Operation {
                 args,
                 function: _,
             } => {
-                push(*dest);
+                assigned = *dest;
                 for vreg in args {
                     push(Some(*vreg));
                 }
             }
         }
+
+        (used, assigned)
     }
 }
 

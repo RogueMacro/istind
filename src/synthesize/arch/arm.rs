@@ -9,7 +9,7 @@ use crate::{
         Assemble, MachineCode,
         arm::{
             instr::{ImmShift16, Instruction},
-            reg::{Allocator, Reg, Register},
+            reg::{Allocator, Reg, Register, RegisterGuard},
         },
     },
 };
@@ -235,9 +235,21 @@ impl<'c> ScopedEmitter<'c> {
     }
 
     fn emit_assign(&mut self, src: SourceVal, dest: VirtualReg, idx: usize) {
-        let dest = self.map_reg(dest, idx);
+        let guard = self.alloc.map(dest, idx);
+        let (dest, stack_ptr) = match guard {
+            RegisterGuard::Ready(_) => unreachable!(),
+            RegisterGuard::Load { load, reg } => (reg, load),
+            RegisterGuard::Save { .. } => unreachable!(),
+            RegisterGuard::SaveAndLoad { save, load, reg } => {
+                self.asm.emit_store(save, reg);
+                (reg, load)
+            }
+        };
+
         match src {
-            SourceVal::Immediate(n) => self.asm.emit_movz(n, dest),
+            SourceVal::Immediate(n) => {
+                self.asm.emit_movz(n, dest);
+            }
             SourceVal::VReg(vreg) => {
                 let src = self.map_reg(vreg, idx);
 
@@ -248,6 +260,8 @@ impl<'c> ScopedEmitter<'c> {
                 self.asm.emit(instr::MovReg { src, dest });
             }
         }
+
+        self.asm.emit_store(stack_ptr, dest);
     }
 
     fn emit_call(
@@ -278,8 +292,19 @@ impl<'c> ScopedEmitter<'c> {
         self.asm.fn_calls.push((function.clone(), offset));
 
         if let Some(dest) = dest {
-            let dest = self.map_reg(dest, instr_index);
+            let guard = self.alloc.map(dest, instr_index);
+            let (dest, stack_ptr) = match guard {
+                RegisterGuard::Ready(_) => unreachable!(),
+                RegisterGuard::Load { load, reg } => (reg, load),
+                RegisterGuard::Save { .. } => unreachable!(),
+                RegisterGuard::SaveAndLoad { save, load, reg } => {
+                    self.asm.emit_store(save, reg);
+                    (reg, load)
+                }
+            };
+
             self.asm.emit(instr::MovReg { src: Reg::X0, dest });
+            self.asm.emit_store(stack_ptr, dest);
         }
     }
 

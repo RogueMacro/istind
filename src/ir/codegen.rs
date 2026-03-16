@@ -129,6 +129,7 @@ impl BlockBuilder {
             ExprType::Character(c) => SourceVal::Immediate(*c as i64),
             ExprType::Bool(b) => SourceVal::Immediate(*b as i64),
             ExprType::Variable(var, ..) => SourceVal::VReg(self.expect_vreg(var)),
+            ExprType::Pointer(var) => todo!(),
             ExprType::Arithmetic(expr1, expr2, op, _sign) => {
                 // TODO: sign
                 let a = self.unroll_expr(expr1.as_ref(), None);
