@@ -1,8 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    path::PathBuf,
-    rc::Rc,
 };
 
 use crate::analyze::{
@@ -47,6 +45,12 @@ impl Analyzer {
                 decl_span,
                 args,
                 ..
+            }
+            | Item::ForwardDecl {
+                name,
+                ret_type,
+                decl_span,
+                args,
             } = item
             {
                 let args = args
@@ -74,6 +78,7 @@ impl Analyzer {
 
         ast.items.retain(|item| match item {
             Item::Function { name, .. } => self.called_funcs.contains(name),
+            Item::ForwardDecl { .. } => false,
             Item::ExternLib(_) => false,
         });
 
@@ -124,7 +129,8 @@ impl Analyzer {
                         .report();
                 }
             }
-            Item::ExternLib(lib) => (), // TODO: maybe?
+            Item::ForwardDecl { .. } => {}
+            Item::ExternLib(_lib) => (), // TODO: maybe?
         }
     }
 

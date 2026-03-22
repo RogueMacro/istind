@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use num_traits::FromPrimitive;
+use num_traits::{FromPrimitive, ToPrimitive};
 use ux::{i7, i12, i19, i26, u12};
 
 use crate::{
@@ -9,11 +9,12 @@ use crate::{
         Assemble, MachineCode,
         arm::{
             instr::{ImmShift16, Instruction},
-            reg::{Allocator, Reg, Register, RegisterGuard},
+            reg::{Allocator, Reg, Register},
         },
     },
 };
 
+pub mod builtin;
 pub mod instr;
 pub mod reg;
 
@@ -39,22 +40,18 @@ impl Assemble for ArmAssembler {
             asm.asm_item(item);
         }
 
+        builtin::assemble(&mut asm);
+
         let mut emitter = ScopedEmitter::new(&mut asm, Allocator::default(), HashMap::new());
         emitter.emit_call(MAIN_FN.to_owned(), vec![], None, 0);
 
-        asm.emit(instr::Movz {
-            shift: ImmShift16::L0,
-            imm_value: 0x1,
-            dest: Reg::X16,
-        });
-
-        asm.emit(instr::Syscall);
+        builtin::exit(&mut asm);
 
         for (function, call_offset) in std::mem::take(&mut asm.fn_calls) {
             let fn_offset = asm
                 .functions
                 .get(&function)
-                .expect("trying to assemble call to unknown function");
+                .unwrap_or_else(|| panic!("call to unknown function {}", function));
 
             let rel_offset = (*fn_offset as i32 - call_offset as i32) / 4;
             asm.emit_at(
@@ -325,7 +322,17 @@ impl<'c> ScopedEmitter<'c> {
         for (i, &arg) in args.iter().enumerate() {
             let src = self.map_reg_use(arg, instr_index);
             let dest = Register::from_usize(i).unwrap();
-            self.asm.emit(instr::MovReg { src, dest });
+
+            if (src as u32) < (i as u32) {
+                // source register has been overwritten
+                self.asm.emit(instr::Load {
+                    base: Reg::SP,
+                    offset: self.alloc.stack_index_of(&arg),
+                    dest,
+                });
+            } else {
+                self.asm.emit(instr::MovReg { src, dest });
+            }
         }
 
         let offset = self.asm.current_offset();
@@ -427,7 +434,6 @@ impl<'c> ScopedEmitter<'c> {
         let instr_idx = self.asm.current_offset();
         self.lazy_emit(label, move |offset| {
             let offset = i26::new((offset - instr_idx) as i32 / 4);
-            println!("jump {}", offset);
             instr::Branch { offset }
         });
     }

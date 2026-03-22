@@ -294,7 +294,7 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
         stack,
         stack_saves,
     };
-    a.print_debug();
+    // a.print_debug();
     a
 }
 
@@ -529,7 +529,7 @@ impl Allocator {
         for (vreg, idx, guard) in vec {
             if last != idx {
                 last = idx;
-                println!("\ninstruction {}", idx);
+                // println!("\ninstruction {}", idx);
             }
 
             println!("{} -> {:?}", vreg, guard);

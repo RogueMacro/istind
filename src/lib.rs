@@ -87,17 +87,6 @@ fn load_ast(name: Rc<PathBuf>, source: &str) -> Result<AST, ErrorVec> {
     Ok(ast)
 }
 
-fn mangle_ast(ast: &mut AST, lib: &str) {
-    use analyze::ast::Item;
-
-    for item in ast.items.iter_mut() {
-        match item {
-            Item::Function { name, .. } => *name = format!("{}::{}", lib, name),
-            Item::ExternLib(_) => (),
-        }
-    }
-}
-
 fn load_lib_recursive(lib: &str, map: &mut HashMap<String, AST>) -> Result<(), ErrorVec> {
     if lib == "std"
         && !map.contains_key(lib)
@@ -106,7 +95,7 @@ fn load_lib_recursive(lib: &str, map: &mut HashMap<String, AST>) -> Result<(), E
         // it's ok if file doesn't exist. semantic analysis will flag it.
         let source_name = Rc::new(files::stdlib());
         let mut ast = load_ast(source_name, &source)?;
-        mangle_ast(&mut ast, lib);
+        ast.mangle(lib);
         map.insert(String::from("std"), ast);
     } else {
         todo!()

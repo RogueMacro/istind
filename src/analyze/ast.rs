@@ -28,6 +28,17 @@ impl AST {
             }
         })
     }
+
+    pub fn mangle(&mut self, lib: &str) {
+        for item in self.items.iter_mut() {
+            match item {
+                Item::Function { name, .. } | Item::ForwardDecl { name, .. } => {
+                    *name = format!("{}::{}", lib, name)
+                }
+                Item::ExternLib(_) => (),
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -36,6 +47,12 @@ pub enum Item {
         name: String,
         args: Vec<(String, SemanticType, Span)>,
         body: Vec<Statement>,
+        ret_type: SemanticType,
+        decl_span: Span,
+    },
+    ForwardDecl {
+        name: String,
+        args: Vec<(String, SemanticType, Span)>,
         ret_type: SemanticType,
         decl_span: Span,
     },

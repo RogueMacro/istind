@@ -139,16 +139,28 @@ impl Parser {
         };
 
         let decl_end = self.lexer.last_token_end();
+        let decl_span = self.span(decl_start..decl_end);
 
-        let body = self.parse_block()?;
+        if matches!(self.lexer.current(), Some((Token::Semicolon, _))) {
+            self.lexer.lex_one()?;
 
-        Ok(Item::Function {
-            name,
-            args,
-            body,
-            ret_type,
-            decl_span: self.span(decl_start..decl_end),
-        })
+            Ok(Item::ForwardDecl {
+                name,
+                args,
+                ret_type,
+                decl_span,
+            })
+        } else {
+            let body = self.parse_block()?;
+
+            Ok(Item::Function {
+                name,
+                args,
+                body,
+                ret_type,
+                decl_span,
+            })
+        }
     }
 
     fn parse_decl_args(&mut self) -> Result<Vec<(String, SemanticType, Span)>, Error> {
