@@ -105,8 +105,8 @@ impl BlockBuilder {
                     let label = self.reserve_label();
                     self.ops.push(Op::BranchIfFalse { cond, label });
 
-                    let outer_vregs = std::mem::take(&mut self.vregs);
-                    let outer_vreg_counter = std::mem::take(&mut self.vreg_counter);
+                    let outer_vregs = self.vregs.clone();
+                    let outer_vreg_counter = self.vreg_counter;
 
                     self.consume_block(body);
 
@@ -231,7 +231,7 @@ impl BlockBuilder {
         *self
             .vregs
             .get(var)
-            .expect("undefined variable (compiler bug)")
+            .unwrap_or_else(|| panic!("undefined variable '{}'", var))
     }
 
     fn get_vreg(&mut self) -> VirtualReg {
