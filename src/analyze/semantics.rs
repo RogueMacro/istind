@@ -469,7 +469,6 @@ impl<S: AsRef<str>> From<S> for SemanticType {
         }
 
         match string {
-            "()" => Self::Unit,
             "i64" => Self::I64,
             "u64" => Self::U64,
             "char" => Self::Char,
@@ -487,7 +486,7 @@ impl fmt::Display for SemanticType {
             SemanticType::U64 => write!(f, "u64"),
             SemanticType::Char => write!(f, "char"),
             SemanticType::Bool => write!(f, "bool"),
-            SemanticType::Pointer(typ) => write!(f, "{}*", typ),
+            SemanticType::Pointer(typ) => write!(f, "&{}", typ),
             SemanticType::UserType(typ) => write!(f, "{}", typ),
         }
     }

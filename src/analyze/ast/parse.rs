@@ -197,6 +197,12 @@ impl Parser {
                 .parse_type()
                 .map(|t| SemanticType::Pointer(Box::new(t))),
             Token::Ident(type_str) => Ok(SemanticType::from(type_str)),
+            Token::LeftParenthesis
+                if matches!(self.lexer.current(), Some((Token::RightParenthesis, _))) =>
+            {
+                self.lexer.lex_one()?;
+                Ok(SemanticType::Unit)
+            }
             _ => Err(self
                 .err_ctx
                 .unexpected_token(self.span(range), "expected argument type")

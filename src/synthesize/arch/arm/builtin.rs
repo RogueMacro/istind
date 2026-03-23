@@ -11,6 +11,8 @@ type BuiltinFn = fn(&mut ArmAssembler);
 
 const PREFIX: &str = "std::";
 
+const PAGE_SIZE: u64 = 16384;
+
 pub fn assemble(asm: &mut ArmAssembler) {
     let builtins: &[(&str, BuiltinFn)] = &[("exit", exit), ("write", write)];
 
@@ -45,4 +47,6 @@ fn syscall(asm: &mut ArmAssembler, typ: SyscallType) {
 enum SyscallType {
     Exit = 1,
     Write = 4,
+    MUnmap = 73,
+    MMap = 197,
 }

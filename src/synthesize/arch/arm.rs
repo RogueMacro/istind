@@ -265,7 +265,7 @@ impl<'c> ScopedEmitter<'c> {
     fn emit_addr_of(&mut self, val: VirtualReg, dest: VirtualReg, idx: usize) {
         let stack_idx = self.alloc.stack_index_of(&val);
         let stack_idx: u16 = stack_idx.into();
-        let stack_idx = i12::new(stack_idx as i16);
+        let stack_idx = i12::new(stack_idx as i16 * 8);
 
         let (dest, stack_ptr) = self.map_reg_assign(dest, idx);
 
