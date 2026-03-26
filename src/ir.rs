@@ -121,10 +121,6 @@ pub enum Operation {
         src: VirtualReg,
         ptr: VirtualReg,
     },
-    LoadStr {
-        str_id: StrId,
-        dest: VirtualReg,
-    },
     Add {
         a: VirtualReg,
         b: VirtualReg,
@@ -201,9 +197,6 @@ impl Operation {
             Operation::StorePointer { src, ptr } => {
                 push(Some(*src));
                 push(Some(*ptr));
-            }
-            Operation::LoadStr { str_id: _, dest } => {
-                push(Some(*dest));
             }
 
             Operation::Add { a, b, dest } | Operation::Subtract { a, b, dest } => {
@@ -388,9 +381,6 @@ impl fmt::Display for IR {
                     }
                     Operation::StorePointer { src, ptr } => {
                         writeln!(f, "    deref {} = {}", ptr, src)?
-                    }
-                    Operation::LoadStr { str_id, dest } => {
-                        writeln!(f, "    {} = string #{}", dest, str_id)?
                     }
 
                     Operation::Add { a, b, dest } => writeln!(f, "    {} = {} + {}", dest, a, b)?,

@@ -283,17 +283,12 @@ impl<'ir> BlockBuilder<'ir> {
 
     fn src_to_vreg(&mut self, src: SourceVal) -> VirtualReg {
         match src {
-            SourceVal::Immediate(_) => {
+            SourceVal::Immediate(_) | SourceVal::String(_) => {
                 let dest = self.get_vreg();
                 self.ops.push(Op::Assign { src, dest });
                 dest
             }
             SourceVal::VReg(vreg) => vreg,
-            SourceVal::String(str_id) => {
-                let dest = self.get_vreg();
-                self.ops.push(Op::LoadStr { str_id, dest });
-                dest
-            }
         }
     }
 

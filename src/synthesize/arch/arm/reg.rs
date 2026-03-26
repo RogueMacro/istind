@@ -240,8 +240,18 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
         }
 
         if matches!(op, Operation::Call { .. }) {
+            let Operation::Call { function, .. } = op else {
+                panic!()
+            };
+            if function == "std::print" {
+                println!("before call to print: {:#?}", locations);
+            }
             for (_, vreg) in clean_regs.drain(..) {
                 locations.get_mut(&vreg).unwrap().reg = None;
+            }
+
+            if function == "std::print" {
+                println!("after call to print: {:#?}", locations);
             }
 
             let save = dirty_regs
@@ -257,7 +267,9 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
             unused_regs = CALLER_SAVED_REGS.to_vec();
         }
 
-        if let Some(vreg) = assigned {
+        if let Some(vreg) = assigned
+            && !uses.contains(&vreg)
+        {
             let entry = *locations.entry(vreg).or_insert_with(|| AllocEntry {
                 reg: None,
                 stack: stack.alloc(vreg, 8),
@@ -294,7 +306,7 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
         stack,
         stack_saves,
     };
-    // a.print_debug();
+    a.print_debug();
     a
 }
 
@@ -494,13 +506,20 @@ pub struct Allocator {
 }
 
 impl Allocator {
-    pub fn map(&self, vreg: VirtualReg, instr_index: usize) -> RegisterGuard {
-        *self.regmap.get(&(vreg, instr_index)).unwrap_or_else(|| {
-            panic!(
-                "no physical register mapped to {} at index {}",
-                vreg, instr_index
-            )
-        })
+    pub fn map(&mut self, vreg: VirtualReg, instr_index: usize) -> RegisterGuard {
+        let entry = self
+            .regmap
+            .get_mut(&(vreg, instr_index))
+            .unwrap_or_else(|| {
+                panic!(
+                    "no physical register mapped to {} at index {}",
+                    vreg, instr_index
+                )
+            });
+
+        let guard = *entry;
+        *entry = RegisterGuard::Ready(guard.inner_reg());
+        guard
     }
 
     pub fn stack_size(&self) -> u12 {
@@ -529,7 +548,7 @@ impl Allocator {
         for (vreg, idx, guard) in vec {
             if last != idx {
                 last = idx;
-                // println!("\ninstruction {}", idx);
+                println!("\ninstruction {}", idx);
             }
 
             println!("{} -> {:?}", vreg, guard);
