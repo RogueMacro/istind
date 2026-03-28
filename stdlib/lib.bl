@@ -6,9 +6,33 @@
 //    return std::write(1, 0, 0);
 //}
 
-fn print(buf: &char, len: i64) -> i64 {
-    r := std::write(1, buf, len);
-    return r;
+fn print(buf: &char) {
+    std::write(1, buf, std::strlen(buf));
+}
+
+fn printc(c: char) {
+    std::write(1, &c, 1);
+}
+
+fn strlen(buf: &char) -> i64 {
+  ptr := buf;
+  while *ptr != '\0' {
+    i := ptr as i64;
+    i = i + 1;
+    ptr = i as &char;
+  }
+
+  start := buf as i64;
+  end := ptr as i64;
+  return end - start;
+}
+
+fn printnumln(buf: &char, n: i64) {
+    n = n + 48;
+    c := n as char;
+    std::print(buf);
+    std::printc(c);
+    std::print("\n");
 }
 
 fn mod(dividend: i64, divisor: i64) -> i64 {

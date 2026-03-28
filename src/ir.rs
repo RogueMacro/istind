@@ -103,6 +103,15 @@ impl fmt::Display for Label {
 
 pub type Op = Operation;
 
+#[derive(Debug, Clone, Copy)]
+pub enum VarSize {
+    Zero,
+    B8,
+    B16,
+    B32,
+    B64,
+}
+
 #[derive(Debug, Clone)]
 pub enum Operation {
     Assign {
@@ -115,6 +124,7 @@ pub enum Operation {
     },
     LoadPointer {
         ptr: VirtualReg,
+        size: VarSize,
         dest: VirtualReg,
     },
     StorePointer {
@@ -190,7 +200,7 @@ impl Operation {
             Operation::AddressOf { val: _, dest } => {
                 push(Some(*dest));
             }
-            Operation::LoadPointer { ptr, dest } => {
+            Operation::LoadPointer { ptr, size: _, dest } => {
                 push(Some(*ptr));
                 assigned = Some(*dest);
             }
@@ -376,8 +386,8 @@ impl fmt::Display for IR {
                     Operation::AddressOf { val, dest } => {
                         writeln!(f, "    {} = ref {}", dest, val)?
                     }
-                    Operation::LoadPointer { ptr, dest } => {
-                        writeln!(f, "    {} = deref {}", dest, ptr)?
+                    Operation::LoadPointer { ptr, size, dest } => {
+                        writeln!(f, "    {} = deref {:?} {}", dest, size, ptr)?
                     }
                     Operation::StorePointer { src, ptr } => {
                         writeln!(f, "    deref {} = {}", ptr, src)?

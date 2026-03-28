@@ -3,9 +3,12 @@ use std::{
     fmt,
 };
 
-use crate::analyze::{
-    ErrorContext, ErrorVec, Span,
-    ast::{AST, Assignable, ExprInner, Expression, Item, Statement},
+use crate::{
+    analyze::{
+        ErrorContext, ErrorVec, Span,
+        ast::{AST, Assignable, ExprInner, Expression, Item, Statement},
+    },
+    ir::VarSize,
 };
 
 pub struct ValidAST(pub AST);
@@ -255,7 +258,10 @@ impl Analyzer {
             ExprInner::Pointer(var) => self
                 .check_var(var, &expr.span)
                 .map(|t| SemanticType::Pointer(Box::new(t))),
-            ExprInner::Deref(var) => self.check_ptr(var, &expr.span),
+            ExprInner::Deref(var, typ) => {
+                *typ = self.check_ptr(var, &expr.span);
+                typ.clone()
+            }
 
             ExprInner::Arithmetic(expr1, expr2, _op, expr_sign) => {
                 if let Some(type1) = self.expression(expr1)
@@ -478,10 +484,23 @@ impl SemanticType {
         }
     }
 
+    pub fn size(&self) -> VarSize {
+        match self {
+            SemanticType::Unit => VarSize::Zero,
+            SemanticType::I64 | SemanticType::U64 => VarSize::B64,
+            SemanticType::Bool | SemanticType::Char => VarSize::B8,
+            SemanticType::Pointer(_) => VarSize::B64,
+            SemanticType::UserType(_) => todo!(),
+        }
+    }
+
     pub fn can_cast_to(&self, other: &SemanticType) -> bool {
         use SemanticType::*;
 
-        matches!((self, other), (Char, I64) | (I64, Char) | (Pointer(_), I64))
+        matches!(
+            (self, other),
+            (Char, I64) | (I64, Char) | (Pointer(_), I64) | (I64, Pointer(_))
+        )
     }
 }
 

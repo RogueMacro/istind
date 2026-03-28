@@ -112,7 +112,7 @@ pub enum ExprInner {
 
     Variable(String),
     Pointer(String),
-    Deref(String),
+    Deref(String, Option<SemanticType>),
 
     Arithmetic(Box<Expression>, Box<Expression>, ArithmeticOp, Option<Sign>),
     Comparison(Box<Expression>, Box<Expression>, CompareOp, Option<Sign>),

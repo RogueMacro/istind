@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use num_traits::FromPrimitive;
-use ux::{i7, i12, i19, i21, i26, u12};
+use strum::IntoEnumIterator;
+use ux::{i7, i12, i19, i21, i26, u9, u12};
 
 use crate::{
-    ir::{Condition, IR, Item, Label, OpIndex, Operation, SourceVal, StrId, VirtualReg},
+    ir::{Condition, IR, Item, Label, OpIndex, Operation, SourceVal, StrId, VarSize, VirtualReg},
     synthesize::arch::{
         Assembler, MachineCode, UnfinishedCode,
         arm::{
@@ -113,9 +114,19 @@ impl ArmAssembler {
         let Item::Function { name, args, bb } = item;
         self.functions.insert(name.clone(), self.current_offset());
 
-        let alloc = reg::allocate(&bb, &args);
+        let mut alloc = reg::allocate(&bb, &args);
 
         self.begin_stack(alloc.stack_size());
+
+        for &vreg in args.iter() {
+            let register = alloc.map(vreg, 0).inner_reg();
+            let offset = alloc.stack_index_of(&vreg);
+            self.emit(instr::Store {
+                base: Reg::SP,
+                offset: instr::Input::Imm(offset),
+                register,
+            });
+        }
 
         let mut emitter = ScopedEmitter::new(self, alloc, bb.labels);
         for (idx, op) in bb.ops.into_iter().enumerate() {
@@ -265,7 +276,7 @@ impl<'c> ScopedEmitter<'c> {
         match op {
             Operation::Assign { src, dest } => self.emit_assign(src, dest, idx),
             Operation::AddressOf { val, dest } => self.emit_addr_of(val, dest, idx),
-            Operation::LoadPointer { ptr, dest } => self.emit_load_ptr(ptr, dest, idx),
+            Operation::LoadPointer { ptr, dest, size } => self.emit_load_ptr(ptr, dest, size, idx),
             Operation::StorePointer { src, ptr } => self.emit_store_ptr(src, ptr, idx),
 
             Operation::Add { a, b, dest } => self.emit_add(a, b, dest, idx),
@@ -350,15 +361,24 @@ impl<'c> ScopedEmitter<'c> {
         self.asm.emit_stack_store(stack_ptr, dest);
     }
 
-    fn emit_load_ptr(&mut self, ptr: VirtualReg, dest: VirtualReg, idx: usize) {
+    fn emit_load_ptr(&mut self, ptr: VirtualReg, dest: VirtualReg, size: VarSize, idx: usize) {
         let ptr = self.map_reg_use(ptr, idx);
         let (dest, store_stack_ptr) = self.map_reg_assign(dest, idx);
 
-        self.asm.emit(instr::Load {
-            base: ptr,
-            offset: u12::new(0),
-            dest,
-        });
+        match size {
+            VarSize::Zero => (),
+            VarSize::B8 => self.asm.emit(instr::LoadByte {
+                base: ptr,
+                offset: u9::new(0),
+                dest,
+            }),
+            VarSize::B16 | VarSize::B32 => todo!(),
+            VarSize::B64 => self.asm.emit(instr::Load {
+                base: ptr,
+                offset: u12::new(0),
+                dest,
+            }),
+        }
 
         self.asm.emit_stack_store(store_stack_ptr, dest);
     }

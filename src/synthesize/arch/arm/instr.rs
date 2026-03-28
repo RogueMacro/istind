@@ -1,6 +1,6 @@
 #![allow(clippy::unusual_byte_groupings)]
 
-use ux::{i7, i12, i19, i21, i26, u12};
+use ux::{i7, i12, i19, i21, i26, u9, u12};
 
 use crate::ir::Condition;
 
@@ -304,6 +304,8 @@ impl Instruction for Div {
 
 /// LDR instruction.
 ///
+/// Loads an 8 byte value from memory into a register.
+///
 /// Encoding (unsigned offset):
 /// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
 /// 1  1  1  1  1  0  0  1  0  1  imm12                               Rn             Rt
@@ -326,6 +328,35 @@ impl Instruction for Load {
         let dest = self.dest as u32;
 
         (0b1111100101 << 22) | (offset << 10) | (base << 5) | dest
+    }
+}
+
+/// LDRB instruction.
+///
+/// Loads a byte sized value from memory into a register.
+///
+/// Encoding (unsigned offset):
+/// 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9  8  7  6  5  4  3  2  1  0
+/// 0  0  1  1  1  0  0  0  0  1  0  imm9                       0  1  Rn             Rt
+///
+/// - imm9: offset from base (stored as a multiple of 8)
+/// - Rn: base pointer
+/// - Rt: destination register
+#[derive(Debug, Clone, Copy)]
+pub struct LoadByte {
+    pub base: Register,
+    pub offset: u9,
+    pub dest: Register,
+}
+
+impl Instruction for LoadByte {
+    fn encode(&self) -> u32 {
+        let offset: u16 = self.offset.into();
+        let offset = offset as u32;
+        let base = self.base as u32;
+        let dest = self.dest as u32;
+
+        (0b00111000010_000000000_01 << 10) | (offset << 12) | (base << 5) | dest
     }
 }
 

@@ -168,7 +168,17 @@ struct AllocEntry {
 pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
     assert!(args.len() <= 8, "only 8 arguments supported");
 
-    let mut regmap = RegMap::new();
+    let mut regmap: RegMap = args
+        .iter()
+        .enumerate()
+        .map(|(i, &vreg)| {
+            (
+                (vreg, 0),
+                RegisterGuard::Ready(Register::from_usize(i).unwrap()),
+            )
+        })
+        .collect();
+
     let mut stack = Stack::default();
     let mut stack_saves: HashMap<usize, Vec<(Register, u12)>> = HashMap::new();
 
@@ -179,27 +189,34 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
             (
                 vreg,
                 AllocEntry {
-                    reg: Register::from_usize(i),
+                    reg: Some(Register::from_usize(i).unwrap()),
                     stack: stack.alloc(vreg, 8),
                 },
             )
         })
         .collect();
 
-    let mut dirty_regs: Vec<(Register, VirtualReg)> = args
+    // let mut dirty_regs: Vec<(Register, VirtualReg)> = args
+    //     .iter()
+    //     .enumerate()
+    //     .map(|(i, &vreg)| (Register::from_usize(i).unwrap(), vreg))
+    //     .collect();
+
+    let mut dirty_regs = Vec::new();
+
+    let mut clean_regs: Vec<(Register, VirtualReg)> = args
         .iter()
         .enumerate()
         .map(|(i, &vreg)| (Register::from_usize(i).unwrap(), vreg))
         .collect();
 
-    let mut clean_regs = Vec::new();
-    let mut unused_regs = CALLER_SAVED_REGS.to_vec();
+    let mut unused_regs = CALLER_SAVED_REGS[args.len()..].to_vec();
 
     for (i, op) in bb.ops.iter().enumerate() {
         let (uses, assigned) = op.vregs_used();
 
         for &vreg in uses.iter() {
-            let entry = *locations.entry(vreg).or_insert_with(|| {
+            let mut entry = *locations.entry(vreg).or_insert_with(|| {
                 let stack_pos = stack.alloc(vreg, 8);
                 AllocEntry {
                     reg: None,
@@ -207,51 +224,49 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
                 }
             });
 
-            let guard: RegisterGuard = entry.reg.map(RegisterGuard::Ready).unwrap_or_else(|| {
-                if let Some(reg) = unused_regs.pop() {
-                    clean_regs.push((reg, vreg));
-                    RegisterGuard::Load {
-                        load: entry.stack,
-                        reg,
+            entry.reg = None;
+
+            let guard: RegisterGuard = entry
+                .reg
+                .map(|reg| RegisterGuard::Load {
+                    load: entry.stack,
+                    reg,
+                })
+                .unwrap_or_else(|| {
+                    if let Some(reg) = unused_regs.pop() {
+                        clean_regs.push((reg, vreg));
+                        RegisterGuard::Load {
+                            load: entry.stack,
+                            reg,
+                        }
+                    } else if let Some((reg, old_vreg)) = clean_regs.pop() {
+                        locations.get_mut(&old_vreg).unwrap().reg = None;
+                        clean_regs.push((reg, vreg));
+                        RegisterGuard::Load {
+                            load: entry.stack,
+                            reg,
+                        }
+                    } else if let Some((reg, old_vreg)) = dirty_regs.pop() {
+                        let old_entry = locations.get_mut(&old_vreg).unwrap();
+                        old_entry.reg = None;
+                        clean_regs.push((reg, vreg));
+                        RegisterGuard::SaveAndLoad {
+                            save: old_entry.stack,
+                            load: entry.stack,
+                            reg,
+                        }
+                    } else {
+                        unreachable!()
                     }
-                } else if let Some((reg, old_vreg)) = clean_regs.pop() {
-                    locations.get_mut(&old_vreg).unwrap().reg = None;
-                    clean_regs.push((reg, vreg));
-                    RegisterGuard::Load {
-                        load: entry.stack,
-                        reg,
-                    }
-                } else if let Some((reg, old_vreg)) = dirty_regs.pop() {
-                    let old_entry = locations.get_mut(&old_vreg).unwrap();
-                    old_entry.reg = None;
-                    clean_regs.push((reg, vreg));
-                    RegisterGuard::SaveAndLoad {
-                        save: old_entry.stack,
-                        load: entry.stack,
-                        reg,
-                    }
-                } else {
-                    unreachable!()
-                }
-            });
+                });
 
             locations.get_mut(&vreg).unwrap().reg = Some(guard.inner_reg());
             regmap.insert((vreg, i), guard);
         }
 
         if matches!(op, Operation::Call { .. }) {
-            let Operation::Call { function, .. } = op else {
-                panic!()
-            };
-            if function == "std::print" {
-                println!("before call to print: {:#?}", locations);
-            }
             for (_, vreg) in clean_regs.drain(..) {
                 locations.get_mut(&vreg).unwrap().reg = None;
-            }
-
-            if function == "std::print" {
-                println!("after call to print: {:#?}", locations);
             }
 
             let save = dirty_regs
@@ -306,7 +321,7 @@ pub fn allocate(bb: &BasicBlock, args: &[VirtualReg]) -> Allocator {
         stack,
         stack_saves,
     };
-    a.print_debug();
+    // a.print_debug();
     a
 }
 

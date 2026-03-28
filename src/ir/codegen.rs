@@ -186,11 +186,15 @@ impl<'ir> BlockBuilder<'ir> {
                 self.ops.push(Op::AddressOf { val, dest });
                 SourceVal::VReg(dest)
             }
-            ExprInner::Deref(var) => {
+            ExprInner::Deref(var, typ) => {
                 let ptr = self.expect_vreg(&var);
                 let dest = dest.unwrap_or_else(|| self.get_vreg());
 
-                self.ops.push(Op::LoadPointer { ptr, dest });
+                self.ops.push(Op::LoadPointer {
+                    ptr,
+                    size: typ.unwrap().size(),
+                    dest,
+                });
                 SourceVal::VReg(dest)
             }
 
@@ -241,17 +245,16 @@ impl<'ir> BlockBuilder<'ir> {
                     })
                     .collect();
 
+                let dest = dest.unwrap_or_else(|| self.get_vreg());
+
+                println!("call to {} ret {:?}", function, dest);
                 self.ops.push(Op::Call {
                     function: function.clone(),
                     args,
-                    dest,
+                    dest: Some(dest),
                 });
 
-                if let Some(dest) = dest {
-                    SourceVal::VReg(dest)
-                } else {
-                    SourceVal::Immediate(0)
-                }
+                SourceVal::VReg(dest)
             }
 
             ExprInner::Cast(expr, _typ) => self.unroll_expr(*expr, dest),

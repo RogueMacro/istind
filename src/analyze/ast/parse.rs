@@ -246,7 +246,7 @@ impl Parser {
                 Some((Token::Assign, _)) => {
                     let var = match expr.inner {
                         ExprInner::Variable(var) => Assignable::Var(var),
-                        ExprInner::Deref(var) => Assignable::Ptr(var),
+                        ExprInner::Deref(var, None) => Assignable::Ptr(var),
                         _ => {
                             return Err(self
                                 .err_ctx
@@ -444,7 +444,7 @@ impl Parser {
                 };
 
                 Expression {
-                    inner: ExprInner::Deref(var),
+                    inner: ExprInner::Deref(var, None),
                     span: self.span(deref_range.start..var_range.end),
                 }
             }

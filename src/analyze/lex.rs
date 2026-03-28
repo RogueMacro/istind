@@ -152,6 +152,8 @@ impl Lexer {
                     .finish());
             };
 
+            let character = self.lex_full_char(character)?;
+
             self.index += 1;
             if !matches!(self.cur_char(), Some('\'')) {
                 return Err(self
@@ -195,43 +197,8 @@ impl Lexer {
                 return Ok((Token::String(string), start..self.index));
             }
 
-            if c == '\\' {
-                self.index += 1;
-                let Some(next) = self.cur_char() else {
-                    return Err(self
-                        .err_ctx
-                        .unexpected_eof(self.span(start..self.index))
-                        .finish());
-                };
-
-                let escaped = match next {
-                    '\\' => '\\',
-                    '"' => '"',
-                    '\'' => '\'',
-                    'n' => '\n',
-                    _ => {
-                        let span = self.span((self.index - 1)..self.index);
-                        return Err(self
-                            .err_ctx
-                            .error(span.clone())
-                            .with_message("invalid escape character")
-                            .with_label(span, "this is not a valid escape character")
-                            .finish());
-                    }
-                };
-
-                string.push(escaped);
-            } else if c.is_ascii() {
-                string.push(c);
-            } else {
-                let span = self.span((self.index - 1)..self.index);
-                return Err(self
-                    .err_ctx
-                    .error(span.clone())
-                    .with_message("invalid string")
-                    .with_label(span, "not a valid character")
-                    .finish());
-            }
+            let c = self.lex_full_char(c)?;
+            string.push(c);
 
             self.index += 1;
         }
@@ -240,6 +207,47 @@ impl Lexer {
             .err_ctx
             .unexpected_eof(self.span(start..self.index))
             .finish())
+    }
+
+    fn lex_full_char(&mut self, c: char) -> Result<char, Error> {
+        if c == '\\' {
+            self.index += 1;
+            let Some(next) = self.cur_char() else {
+                return Err(self
+                    .err_ctx
+                    .unexpected_eof(self.span((self.index - 1)..self.index))
+                    .finish());
+            };
+
+            let escaped = match next {
+                '\\' => '\\',
+                '"' => '"',
+                '\'' => '\'',
+                'n' => '\n',
+                '0' => '\0',
+                _ => {
+                    let span = self.span((self.index - 1)..self.index);
+                    return Err(self
+                        .err_ctx
+                        .error(span.clone())
+                        .with_message("invalid escape character")
+                        .with_label(span, "this is not a valid escape character")
+                        .finish());
+                }
+            };
+
+            Ok(escaped)
+        } else if c.is_ascii() {
+            Ok(c)
+        } else {
+            let span = self.span((self.index - 1)..self.index);
+            return Err(self
+                .err_ctx
+                .error(span.clone())
+                .with_message("invalid string")
+                .with_label(span, "not a valid character")
+                .finish());
+        }
     }
 
     fn lex_ascii(&mut self) -> (Token, Range<usize>) {
